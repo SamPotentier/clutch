@@ -206,7 +206,8 @@ function renderTabs() {
     d.title = `${shortPath(t.cwd)}${t.command ? ' — ' + t.command : ''}${i < 9 ? `  (⌘${i + 1})` : ''}`;
     d.innerHTML = `<span class="dot" style="background:${t.color}"></span><span class="title">${esc(t.title)}</span><span class="badge"></span><button class="close" title="Fermer (⌘W)">×</button>`;
     d.onclick = () => activate(t.key);
-    d.onauxclick = (e) => e.button === 1 && closeTab(t.key);
+    // Au mousedown : les onglets sont souvent redessinés, un auxclick n'arrive pas toujours au même élément
+    d.onmousedown = (e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.key); } };
     d.querySelector('.close').onclick = (e) => { e.stopPropagation(); closeTab(t.key); };
     el.appendChild(d);
   });

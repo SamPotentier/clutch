@@ -89,7 +89,8 @@ kbd { background: var(--bg-3); border: 1px solid var(--border); border-radius: 4
 #terms.grid .term-wrap.active { border-color: var(--accent); }
 .term-head { display: none; align-items: center; gap: 6px; padding: 3px 8px; background: var(--bg-2); font-size: 11px; color: var(--muted); cursor: pointer; }
 #terms.grid .term-head { display: flex; }
-.term-body { flex: 1; min-height: 0; padding: 4px 0 0 6px; background: var(--term-bg); }
+/* content-box : FitAddon lit la hauteur du parent sans retirer son padding, sinon la dernière ligne déborde */
+.term-body { flex: 1; min-height: 0; box-sizing: content-box; padding: 4px 0 4px 6px; background: var(--term-bg); }
 #empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); }
 #empty h2 { color: var(--text); font-weight: 500; margin-bottom: 4px; }
 
