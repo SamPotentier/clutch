@@ -406,6 +406,26 @@ ipcMain.handle('dialog:folder', async () => {
   const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
   return res.canceled ? null : res.filePaths[0];
 });
+// Fond personnalisé : l'image est copiée dans userData pour ne pas dépendre du fichier d'origine
+ipcMain.handle('bg:pick', async () => {
+  const res = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }] });
+  if (res.canceled) return null;
+  const src = res.filePaths[0];
+  const dir = path.join(app.getPath('userData'), 'backgrounds');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const dest = path.join(dir, `fond-${Date.now()}${path.extname(src).toLowerCase()}`);
+  fs.copyFileSync(src, dest);
+  return { path: dest, name: path.basename(src) };
+});
+ipcMain.handle('bg:read', (_e, file) => {
+  try {
+    const ext = path.extname(file).slice(1).replace('jpg', 'jpeg');
+    return `data:image/${ext};base64,${fs.readFileSync(file).toString('base64')}`;
+  } catch {
+    return null;
+  }
+});
 ipcMain.handle('fs:subdirs', (_e, dir) => {
   try {
     dir = expandHome(dir);

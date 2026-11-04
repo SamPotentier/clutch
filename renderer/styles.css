@@ -214,14 +214,26 @@ body.resizing .xterm { pointer-events: none; }
 
 /* ---------- Sélecteur de thème ---------- */
 .tab-actions { display: flex; gap: 4px; position: relative; }
-#theme-pop { position: absolute; top: calc(100% + 6px); right: 0; bottom: auto; width: 300px; z-index: 50; }
-.theme-card { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: var(--r); cursor: pointer; border: 1px solid transparent; }
-.theme-card:hover { background: var(--bg); }
-.theme-card.on { border-color: var(--accent); }
-.theme-card .swatches { display: flex; width: 54px; height: 34px; border-radius: 6px; overflow: hidden; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(127, 127, 127, .3); }
-.theme-card .swatches span { flex: 1; }
-.theme-card b { display: block; font-weight: 600; }
-.theme-card small { color: var(--muted); font-size: 11.5px; }
+#theme-pop { position: absolute; top: calc(100% + 6px); right: 0; bottom: auto; width: 360px; max-height: none; z-index: 50; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+#theme-pop.hidden { display: none; }
+.tp-head { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.tp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.tp-tile { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 4px; background: transparent; border: 1px solid transparent; border-radius: var(--r); }
+.tp-tile:hover { background: var(--bg); }
+.tp-tile.on { border-color: var(--accent); }
+/* Mini fenêtre : barre latérale, accent, ligne de texte */
+.tp-prev { position: relative; display: block; height: 42px; border-radius: 5px; overflow: hidden; box-shadow: 0 0 0 1px rgba(127, 127, 127, .3); }
+.tp-prev i { position: absolute; left: 0; top: 0; bottom: 0; width: 28%; }
+.tp-prev em { position: absolute; left: 36%; top: 9px; width: 34%; height: 5px; border-radius: 3px; }
+.tp-prev u { position: absolute; left: 36%; top: 20px; width: 52%; height: 4px; border-radius: 2px; opacity: .8; }
+.tp-name { font-size: 11.5px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-kind { width: 100%; }
+.tp-kind button { flex: 1; }
+.tp-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.tp-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+.tp-row input[type="color"] { width: 44px; height: 26px; padding: 0; border: 1px solid var(--border); background: none; }
+.tp-row span { min-width: 34px; text-align: right; }
+.tp-file { flex: 1; text-align: left !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- Thème Glass ---------- */
 body[data-theme="glass"] {
@@ -366,6 +378,7 @@ body[data-theme="retro"] .chip { text-transform: none; }
 #tabbar { position: relative; z-index: 30; }
 /* Un backdrop-filter imbriqué (popover dans la barre d'onglets) ne floute rien : on opacifie */
 body[data-theme="glass"] #theme-pop { background: rgba(28, 26, 58, .94); }
+body.has-bg #theme-pop { background: var(--bg-3); }
 
 /* ---------- Thème Conversation (couleurs de Papier, un peu plus chaudes) ---------- */
 body[data-theme="conversation"] {
@@ -602,3 +615,69 @@ body[data-theme="systeme"] .term-body { position: relative; }
 body[data-theme="systeme"] .term-body::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(63, 169, 255, .035) 0 1px, transparent 1px 4px); }
 body[data-theme="systeme"] #preset-list li:hover, body[data-theme="systeme"] .side-list li:hover { background: rgba(63, 169, 255, .08); box-shadow: inset 2px 0 0 var(--accent); }
 body[data-theme="systeme"] .term-head span:nth-child(3) { text-transform: none; letter-spacing: 0; opacity: .7; }
+
+/* Fond personnalisé : calque derrière l'app, panneaux translucides */
+#bg-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none; display: none; }
+body.has-bg #bg-layer { display: block; }
+#app { position: relative; z-index: 1; }
+body.has-bg :is(#sidebar, #tabbar, #promptbar, #diff-panel) { background: color-mix(in srgb, var(--bg-2) var(--panel-alpha), transparent) !important; }
+body.has-bg :is(.term-body, .chat-wrap) { background: color-mix(in srgb, var(--term-bg) var(--panel-alpha), transparent) !important; }
+body.has-bg .term-wrap { background: transparent; }
+body.has-bg .xterm,
+body.has-bg .xterm .xterm-viewport,
+body.has-bg .xterm .xterm-screen,
+body.has-bg .xterm .xterm-scrollable-element { background-color: transparent !important; }
+
+/* Thème Kyōto : encre sumi, vermillon, vagues seigaiha */
+body[data-theme="kyoto"] {
+  --app-bg: #14110f;
+  --bg: #17130f;
+  --bg-2: #1b1714;
+  --bg-3: #29211b;
+  --border: #3b3029;
+  --text: #ece3d3;
+  --muted: #a39582;
+  --faint: #6e6052;
+  --accent: #e0533d;
+  --on-accent: #fbf6ec;
+  --danger: #e0533d;
+  --add: #8fb573;
+  --del: #e0533d;
+  --warn: #d4a64a;
+  --info: #6fa8a0;
+  --add-bg: rgba(143, 181, 115, .10);
+  --add-bg-2: rgba(143, 181, 115, .17);
+  --del-bg: rgba(224, 83, 61, .10);
+  --del-bg-2: rgba(224, 83, 61, .17);
+  --hunk-bg: rgba(212, 166, 74, .10);
+  --term-bg: #17130f;
+  --font-ui: "Hiragino Mincho ProN", "Yu Mincho", "Hiragino Sans", Georgia, serif;
+  --r: 3px;
+  --r2: 4px;
+  --r3: 6px;
+  --wave-a: #1b1714;
+  --wave-b: #241d18;
+}
+/* Seigaiha (vagues) dans la barre latérale, très discrètes */
+body[data-theme="kyoto"]:not(.has-bg) #sidebar {
+  background-color: var(--wave-a);
+  background-image:
+    radial-gradient(circle at 100% 150%, var(--wave-a) 24%, var(--wave-b) 24% 28%, var(--wave-a) 28% 36%, var(--wave-b) 36% 40%, transparent 40%),
+    radial-gradient(circle at 0 150%, var(--wave-a) 24%, var(--wave-b) 24% 28%, var(--wave-a) 28% 36%, var(--wave-b) 36% 40%, transparent 40%),
+    radial-gradient(circle at 50% 100%, var(--wave-b) 10%, var(--wave-a) 10% 23%, var(--wave-b) 23% 30%, var(--wave-a) 30% 43%, var(--wave-b) 43% 50%, var(--wave-a) 50% 63%, var(--wave-b) 63% 71%, transparent 71%),
+    radial-gradient(circle at 100% 50%, var(--wave-b) 5%, var(--wave-a) 5% 15%, var(--wave-b) 15% 20%, var(--wave-a) 20% 29%, var(--wave-b) 29% 34%, var(--wave-a) 34% 44%, var(--wave-b) 44% 49%, transparent 49%),
+    radial-gradient(circle at 0 50%, var(--wave-b) 5%, var(--wave-a) 5% 15%, var(--wave-b) 15% 20%, var(--wave-a) 20% 29%, var(--wave-b) 29% 34%, var(--wave-a) 34% 44%, var(--wave-b) 44% 49%, transparent 49%);
+  background-size: 64px 32px;
+}
+body[data-theme="kyoto"] #sidebar { border-right: 2px solid #2e2520; }
+body[data-theme="kyoto"] .side-head, body[data-theme="kyoto"] .tp-head { letter-spacing: .14em; }
+/* Onglet actif : liseré vermillon façon torii */
+body[data-theme="kyoto"] .tab.active { border-top: 2px solid var(--accent); background: var(--bg); }
+body[data-theme="kyoto"] .term-wrap { border: 1px solid var(--border); }
+body[data-theme="kyoto"] #terms.grid .term-wrap.active { border-color: #8a3a2c; box-shadow: inset 0 2px 0 var(--accent); }
+body[data-theme="kyoto"] .term-head { color: var(--muted); }
+/* Sceau hanko devant les titres de fenêtres */
+body[data-theme="kyoto"] .dialog h3::before { content: "印"; display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 10px; font-size: 13px; color: #fbf6ec; background: var(--accent); border-radius: 3px; vertical-align: 2px; }
+body[data-theme="kyoto"] .dialog { border-top: 3px solid var(--accent); }
+body[data-theme="kyoto"] button.primary { background: var(--accent); color: #fbf6ec; border-color: var(--accent); }
+body[data-theme="kyoto"] #preset-list li:hover { box-shadow: inset 2px 0 0 #f2a7b8; }

@@ -52,6 +52,15 @@ const THEMES = {
       brightBlack: '#4f6a8f', brightRed: '#ff8099', brightGreen: '#7dffd6', brightYellow: '#ffe299', brightBlue: '#7cc4ff', brightMagenta: '#b896ff', brightCyan: '#8eecff', brightWhite: '#f0f8ff',
     },
   },
+  kyoto: {
+    label: 'Kyōto', desc: 'Encre sumi, vermillon des torii, vagues seigaiha', swatches: ['#14110f', '#211b16', '#e0533d', '#f2a7b8'],
+    winBg: '#14110f', fontSize: 13, lineHeight: 1.25, cursor: 'bar', placeholder: '一 Écris ta commande… (⌘↵ pour envoyer)',
+    xterm: {
+      background: '#17130f', foreground: '#ece3d3', cursor: '#e0533d', cursorAccent: '#17130f', selectionBackground: 'rgba(224,83,61,.25)',
+      black: '#14110f', red: '#e0533d', green: '#8fb573', yellow: '#d4a64a', blue: '#6f8fb8', magenta: '#d98aa6', cyan: '#6fa8a0', white: '#d9cfbf',
+      brightBlack: '#6e6052', brightRed: '#f07a62', brightGreen: '#a9cc8d', brightYellow: '#e6c06e', brightBlue: '#94b0d4', brightMagenta: '#f2a7b8', brightCyan: '#8fc4bc', brightWhite: '#fbf6ec',
+    },
+  },
 };
 THEMES.conversation = {
   ...THEMES.papier, label: 'Conversation', desc: 'Claude comme une discussion : bulles, texte lisible, actions résumées',
@@ -61,16 +70,19 @@ THEMES.conversation = {
 const currentTheme = () => THEMES[state.theme] || THEMES.nuit;
 // Barre de défilement discrète, lisible sur fond clair comme sombre
 const SCROLLBAR = { scrollbarSliderBackground: 'rgba(127,127,127,.22)', scrollbarSliderHoverBackground: 'rgba(127,127,127,.38)', scrollbarSliderActiveBackground: 'rgba(127,127,127,.5)', overviewRulerBorder: 'rgba(0,0,0,0)' };
-const termOptions = (th) => ({ theme: { ...SCROLLBAR, ...th.xterm }, fontSize: th.fontSize, lineHeight: th.lineHeight, cursorStyle: th.cursor, fontFamily: NERD_MONO });
+// Avec un fond personnalisé, le terminal devient transparent pour laisser voir l'image
+const hasBg = () => state.bg.kind === 'color' || (state.bg.kind === 'image' && !!state.bg.image);
+const termOptions = (th) => ({ theme: { ...SCROLLBAR, ...th.xterm, ...(hasBg() ? { background: 'rgba(0,0,0,0)' } : {}) }, fontSize: th.fontSize, lineHeight: th.lineHeight, cursorStyle: th.cursor, fontFamily: NERD_MONO });
 
 const state = { theme: 'nuit', accounts: [], account: '', defaultName: 'Pro', lastActive: {}, presets: [], prompts: [], layout: 'tabs', tabs: [], activeKey: null, skills: [], skillConfigs: {}, customSkills: [],
-  diff: { open: false, scope: 'session', auto: true, width: 560, collapsed: new Set() } };
+  diff: { open: false, scope: 'session', auto: true, width: 560, collapsed: new Set() },
+  bg: { kind: '', color: '#1e2a44', image: '', imageName: '', opacity: 78, blur: 0 } };
 const byPty = new Map(); // ptyId -> tab
 
 function persist() {
   api.saveData({
     theme: state.theme, accounts: state.accounts, account: state.account, defaultName: state.defaultName, chatMode: state.chatMode, presets: state.presets, prompts: state.prompts, layout: state.layout,
-    skillConfigs: state.skillConfigs, customSkills: state.customSkills,
+    skillConfigs: state.skillConfigs, customSkills: state.customSkills, bg: state.bg,
     diff: { scope: state.diff.scope, auto: state.diff.auto, width: state.diff.width },
   });
 }
@@ -1061,23 +1073,88 @@ function applyTheme(name) {
   renderThemePop();
 }
 
+// Sélecteur compact : une grille de vignettes, puis le réglage du fond
 function renderThemePop() {
-  $('#theme-pop').innerHTML = Object.entries(THEMES).map(([key, th]) => `
-    <div class="theme-card${key === state.theme ? ' on' : ''}" data-theme="${key}">
-      <div class="swatches">${th.swatches.map((c) => `<span style="background:${c}"></span>`).join('')}</div>
-      <div><b>${th.label}</b><small>${th.desc}</small></div>
-    </div>`).join('');
+  const b = state.bg;
+  $('#theme-pop').innerHTML = `
+    <div class="tp-head">Thème</div>
+    <div class="tp-grid">${Object.entries(THEMES).map(([key, th]) => `
+      <button class="tp-tile${key === state.theme ? ' on' : ''}" data-theme="${key}" title="${esc(th.desc)}">
+        <span class="tp-prev" style="background:${th.swatches[0]}">
+          <i style="background:${th.swatches[1]}"></i><em style="background:${th.swatches[2]}"></em><u style="background:${th.swatches[3]}"></u>
+        </span>
+        <span class="tp-name">${th.label}</span>
+      </button>`).join('')}
+    </div>
+    <div class="tp-head">Fond</div>
+    <div class="seg tp-kind">${[['', 'Thème'], ['color', 'Couleur'], ['image', 'Image']].map(([v, l]) => `<button data-kind="${v}" class="${b.kind === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+    ${b.kind === 'color' ? `<label class="tp-row">Couleur <input type="color" id="bg-color" value="${b.color}"></label>` : ''}
+    ${b.kind === 'image' ? `<div class="tp-row"><button id="bg-pick">${b.image ? 'Changer l’image…' : 'Choisir une image…'}</button><span class="tp-file">${esc(b.imageName || '')}</span></div>` : ''}
+    ${b.kind ? `
+      <label class="tp-row">Opacité des panneaux <input type="range" id="bg-opacity" min="15" max="100" value="${b.opacity}"><span>${b.opacity}%</span></label>
+      ${b.kind === 'image' ? `<label class="tp-row">Flou <input type="range" id="bg-blur" min="0" max="30" value="${b.blur}"><span>${b.blur}px</span></label>` : ''}` : ''}`;
 }
 
-$('#theme-pop').addEventListener('click', (e) => {
-  const card = e.target.closest('.theme-card');
-  if (!card) return;
-  applyTheme(card.dataset.theme);
+const bgCache = {};
+async function applyBg() {
+  const b = state.bg;
+  const layer = $('#bg-layer');
+  document.body.classList.toggle('has-bg', hasBg());
+  document.body.style.setProperty('--panel-alpha', `${b.opacity}%`);
+  layer.style.background = b.kind === 'color' ? b.color : '';
+  if (b.kind === 'image' && b.image) {
+    bgCache[b.image] ||= await api.bgRead(b.image);
+    if (bgCache[b.image]) layer.style.background = `center / cover no-repeat url("${bgCache[b.image]}")`;
+  }
+  layer.style.filter = b.kind === 'image' && b.blur ? `blur(${b.blur}px)` : '';
+  layer.style.inset = b.kind === 'image' && b.blur ? `-${b.blur * 2}px` : '0';
+  const th = currentTheme();
+  for (const t of state.tabs) if (t.term) Object.assign(t.term.options, termOptions(th));
+}
+
+let bgSaveTimer;
+const saveBgSoon = () => { clearTimeout(bgSaveTimer); bgSaveTimer = setTimeout(persist, 300); };
+
+$('#theme-pop').addEventListener('click', async (e) => {
+  const tile = e.target.closest('.tp-tile');
+  if (tile) {
+    applyTheme(tile.dataset.theme);
+    applyBg();
+    return persist();
+  }
+  const kind = e.target.closest('[data-kind]');
+  if (kind) {
+    state.bg.kind = kind.dataset.kind;
+    if (state.bg.kind === 'image' && !state.bg.image) return pickBg();
+    renderThemePop();
+    applyBg();
+    return persist();
+  }
+  if (e.target.id === 'bg-pick') pickBg();
+});
+async function pickBg() {
+  renderThemePop();
+  const res = await api.bgPick();
+  if (res) Object.assign(state.bg, { kind: 'image', image: res.path, imageName: res.name });
+  else if (!state.bg.image) state.bg.kind = '';
+  renderThemePop();
+  applyBg();
   persist();
+}
+$('#theme-pop').addEventListener('input', (e) => {
+  const v = e.target.value;
+  if (e.target.id === 'bg-color') state.bg.color = v;
+  if (e.target.id === 'bg-opacity') state.bg.opacity = +v;
+  if (e.target.id === 'bg-blur') state.bg.blur = +v;
+  const out = e.target.nextElementSibling;
+  if (out?.tagName === 'SPAN') out.textContent = e.target.id === 'bg-blur' ? `${v}px` : `${v}%`;
+  applyBg();
+  saveBgSoon();
 });
 $('#btn-theme').onclick = (e) => { e.stopPropagation(); renderThemePop(); $('#theme-pop').classList.toggle('hidden'); };
 document.addEventListener('click', (e) => {
-  if (!$('#theme-pop').contains(e.target) && e.target.id !== 'btn-theme') $('#theme-pop').classList.add('hidden');
+  // composedPath : un clic dans le sélecteur le redessine, la cible n'est alors plus dans le DOM
+  if (!e.composedPath().includes($('#theme-pop')) && e.target.id !== 'btn-theme') $('#theme-pop').classList.add('hidden');
 });
 
 /* ---------- Barre de prompt ---------- */
@@ -1286,7 +1363,9 @@ window.addEventListener('keydown', (e) => {
   state.accounts = data.accounts || [];
   state.defaultName = data.defaultName || 'Pro';
   state.account = state.accounts.some((a) => a.id === data.account) ? data.account : '';
+  Object.assign(state.bg, data.bg || {});
   applyTheme(data.theme || 'nuit');
+  applyBg();
   state.customSkills = data.customSkills || [];
   Object.assign(state.diff, data.diff || {});
   $('#diff-scope').value = state.diff.scope;

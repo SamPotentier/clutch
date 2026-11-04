@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('api', {
   saveData: (data) => ipcRenderer.invoke('data:save', data),
   pickFolder: () => ipcRenderer.invoke('dialog:folder'),
   subdirs: (dir) => ipcRenderer.invoke('fs:subdirs', dir),
+  bgPick: () => ipcRenderer.invoke('bg:pick'),
+  bgRead: (file) => ipcRenderer.invoke('bg:read', file),
   scanSkills: (projectDirs, configDir) => ipcRenderer.invoke('skills:scan', projectDirs, configDir),
   gitTrack: (cwd) => ipcRenderer.invoke('git:track', cwd),
   gitUntrack: (root) => ipcRenderer.send('git:untrack', root),
