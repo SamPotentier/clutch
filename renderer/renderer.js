@@ -108,7 +108,7 @@ async function openTerminal({ name, cwd, command, color, presetId, accountId = s
 
   tab.wrap = document.createElement('div');
   tab.wrap.className = 'term-wrap';
-  tab.wrap.innerHTML = `<div class="term-head"><span class="dot" style="background:${tab.color}"></span><span>${esc(tab.title)}</span><span>${esc(shortPath(cwd))}</span></div><div class="term-body"></div>`;
+  tab.wrap.innerHTML = `<div class="term-head"><span class="dot" style="background:${tab.color}"></span><span>${esc(tab.title)}</span><span>${esc(shortPath(cwd))}</span><span class="cstate"></span></div><div class="term-body"></div>`;
   tab.wrap.querySelector('.term-head').onclick = () => activate(tab.key);
   makeDraggable(tab.wrap.querySelector('.term-head'), tab, 'pane');
   $('#terms').appendChild(tab.wrap);
@@ -123,6 +123,7 @@ async function openTerminal({ name, cwd, command, color, presetId, accountId = s
   tab.term.open(tab.wrap.querySelector('.term-body'));
 
   tab.term.onData((data) => {
+    if (data.includes('\r') && tab.cstate === 'waiting') setClaudeState(tab, null);
     if (tab.exited) {
       if (data === '\r') restart(tab);
       return;
@@ -130,6 +131,11 @@ async function openTerminal({ name, cwd, command, color, presetId, accountId = s
     api.write(tab.ptyId, data);
   });
   tab.term.onResize(({ cols, rows }) => tab.ptyId && api.resize(tab.ptyId, cols, rows));
+  // Claude Code met « ◐ ◑ ◒ ◓ » en tête du titre pendant qu'il travaille, « ✳ » quand c'est à nous
+  tab.term.onTitleChange((title) => {
+    if (/^[◐◑◒◓]/.test(title)) setClaudeState(tab, 'working');
+    else if (/^✳/.test(title) && tab.cstate === 'working') setClaudeState(tab, 'waiting');
+  });
   tab.term.onBell(() => { if (tab.key !== state.activeKey) { tab.bell = true; renderTabs(); } });
   tab.term.textarea.addEventListener('focus', () => state.activeKey !== tab.key && activate(tab.key));
 
@@ -222,9 +228,27 @@ api.onExit((id, code) => {
   if (!tab) return;
   byPty.delete(id);
   tab.exited = true;
+  tab.cstate = null;
   tab.term.write(`\r\n\x1b[2m[processus terminé (code ${code}) — Entrée pour relancer, ⌘W pour fermer]\x1b[0m\r\n`);
   renderTabs();
 });
+
+/* ---------- État de Claude : travaille / attend notre réponse ---------- */
+
+const CSTATE = {
+  working: ['spinner', 'Claude travaille…'],
+  waiting: ['reply', 'Claude attend ta réponse'],
+};
+const cstateIcon = (t) => (CSTATE[t.cstate] ? `<span class="cstate ${t.cstate}" title="${CSTATE[t.cstate][1]}">${icon(CSTATE[t.cstate][0])}</span>` : '');
+
+function setClaudeState(tab, s) {
+  if (tab.cstate === s) return;
+  tab.cstate = s;
+  const head = tab.wrap.querySelector('.term-head .cstate');
+  if (head) head.outerHTML = cstateIcon(tab) || '<span class="cstate"></span>';
+  renderTabs();
+  renderPresets();
+}
 
 /* ---------- Rendu ---------- */
 
@@ -235,7 +259,7 @@ function renderTabs() {
     const d = document.createElement('div');
     d.className = 'tab' + (t.key === state.activeKey ? ' active' : '') + (t.exited && t.kind !== 'chat' ? ' exited' : '') + (t.bell ? ' bell' : t.activity ? ' activity' : '');
     d.title = `${shortPath(t.cwd)}${t.command ? ' — ' + t.command : ''}${i < 9 ? `  (⌘${i + 1})` : ''}`;
-    d.innerHTML = `<span class="dot" style="background:${t.color}"></span><span class="title">${esc(t.title)}</span><span class="badge"></span><button class="close" title="Fermer (⌘W)">${icon('x')}</button>`;
+    d.innerHTML = `<span class="dot" style="background:${t.color}"></span>${cstateIcon(t)}<span class="title">${esc(t.title)}</span><span class="badge"></span><button class="close" title="Fermer (⌘W)">${icon('x')}</button>`;
     d.onclick = () => activate(t.key);
     // Au mousedown : les onglets sont souvent redessinés, un auxclick n'arrive pas toujours au même élément
     d.onmousedown = (e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.key); } };
@@ -254,13 +278,16 @@ function renderPresets() {
   for (const p of spacePresets()) {
     if (q && !`${p.name} ${p.cwd}`.toLowerCase().includes(q)) continue;
     const n = state.tabs.filter((t) => t.presetId === p.id && !t.exited).length;
+    // Claude qui attend une réponse prime sur Claude qui travaille
+    const states = state.tabs.filter((t) => t.presetId === p.id).map((t) => t.cstate);
+    const pstate = states.includes('waiting') ? 'waiting' : states.includes('working') ? 'working' : null;
     const li = document.createElement('li');
     const panes = panesOf(p);
     const summary = panes.length > 1 ? `${panes.length} terminaux` : p.command;
     li.title = `${p.cwd}\n${panes.map((x) => '• ' + paneLabel(x)).join('\n')}`;
     li.innerHTML = `<span class="dot" style="background:${p.color}"></span>
       <div class="info"><div class="name">${esc(p.name)}</div><div class="path">${esc(shortPath(p.cwd))}${summary ? ' · ' + esc(summary) : ''}</div></div>
-      ${n ? `<span class="count">${n}</span>` : ''}
+      ${n ? `<span class="count${pstate ? ' ' + pstate : ''}" title="${pstate ? CSTATE[pstate][1] : ''}">${pstate ? icon(CSTATE[pstate][0]) : n}</span>` : ''}
       <div class="tools"><button data-a="skill" title="Lancer un skill sur ce projet (⌘J)">${icon('zap')}</button><button data-a="edit" title="Modifier">${icon('pencil')}</button><button data-a="del" title="Supprimer">${icon('trash')}</button></div>`;
     li.onclick = (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;
@@ -1418,6 +1445,7 @@ function sendToTab(t, text) {
   if (t.kind === 'chat') return chatSend(t, text);
   // paste() gère le bracketed paste : un prompt multi-ligne arrive en un seul bloc dans Claude Code.
   t.term.paste(text);
+  if (t.cstate === 'waiting') setClaudeState(t, null);
   setTimeout(() => api.write(t.ptyId, '\r'), 120);
 }
 

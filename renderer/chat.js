@@ -85,7 +85,7 @@ async function openChat({ name, cwd, color, presetId, accountId = state.account,
     group, exited: false, busy: false, sessionId: null, model: '', tools: new Map(), blocks: [], stderr: '',
   };
   tab.wrap = el('div', 'term-wrap chat-wrap', `
-    <div class="term-head"><span class="dot" style="background:${tab.color}"></span><span>${esc(tab.title)}</span><span>${esc(shortPath(cwd))}</span></div>
+    <div class="term-head"><span class="dot" style="background:${tab.color}"></span><span>${esc(tab.title)}</span><span>${esc(shortPath(cwd))}</span><span class="cstate"></span></div>
     <div class="chat-bar">
       <span class="chat-status"></span>
       <select class="chat-mode" title="Ce que Claude peut faire sans demander">${PERMISSION_MODES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
@@ -218,6 +218,7 @@ api.onChatExit((id, code) => {
   tab.chatId = null;
   tab.exited = true;
   setBusy(tab, false);
+  setClaudeState(tab, null);
   if (code) addNotice(tab, `Claude s’est arrêté (code ${code}).${tab.stderr ? `<pre>${esc(tab.stderr.trim())}</pre>` : ''}`, 'error');
   renderTabs();
 });
@@ -287,6 +288,7 @@ function onLocalCommandOutput(tab, content) {
 function onResult(tab, ev) {
   clearTimeout(tab.interruptTimer);
   setBusy(tab, false);
+  setClaudeState(tab, 'waiting');
   refreshUsage();
   if (tab.lastSent === '/clear') {
     tab.log.innerHTML = '';
@@ -610,6 +612,7 @@ function renderChatBar(tab) {
 function setBusy(tab, busy, label) {
   tab.busy = busy;
   if (label) tab.busyLabel = label;
+  if (busy) setClaudeState(tab, /attente de ta réponse|te pose une question/.test(label || '') ? 'waiting' : 'working');
   renderChatBar(tab);
 }
 
