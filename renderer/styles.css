@@ -541,3 +541,64 @@ button.link { border: none; background: none; color: var(--accent); padding: 0; 
 .seg button.on { background: var(--accent); color: var(--bg); }
 .seg.disabled { opacity: .45; pointer-events: none; }
 #preset-form { width: 580px; max-height: 84vh; overflow-y: auto; }
+
+/* Thème Système (Solo Leveling) : fenêtres holographiques bleues, angles vifs, lueur néon */
+body[data-theme="systeme"] {
+  --app-bg: radial-gradient(ellipse 80% 60% at 70% 0%, rgba(40, 110, 255, .18), transparent 60%), radial-gradient(ellipse 60% 50% at 0% 100%, rgba(120, 70, 255, .14), transparent 60%), #03060f;
+  --bg: #050b1a;
+  --bg-2: rgba(8, 18, 40, .82);
+  --bg-3: #0c1d3d;
+  --border: rgba(63, 169, 255, .35);
+  --text: #d4ecff;
+  --muted: #7d9cc4;
+  --faint: #4f6a8f;
+  --accent: #3fa9ff;
+  --on-accent: #02050d;
+  --danger: #ff5c7a;
+  --add: #4dffc3;
+  --del: #ff5c7a;
+  --warn: #ffd36b;
+  --info: #5ce1ff;
+  --add-bg: rgba(77, 255, 195, .08);
+  --add-bg-2: rgba(77, 255, 195, .15);
+  --del-bg: rgba(255, 92, 122, .08);
+  --del-bg-2: rgba(255, 92, 122, .15);
+  --hunk-bg: rgba(63, 169, 255, .10);
+  --overlay: rgba(1, 4, 12, .6);
+  --shadow: 0 0 0 1px rgba(63, 169, 255, .5), 0 0 30px rgba(63, 169, 255, .35), 0 20px 60px rgba(0, 0, 0, .6);
+  --term-bg: rgba(4, 10, 24, .78);
+  --r: 2px;
+  --r2: 2px;
+  --r3: 3px;
+}
+body[data-theme="systeme"] #sidebar, body[data-theme="systeme"] #tabbar, body[data-theme="systeme"] #promptbar { background: rgba(5, 12, 28, .72); }
+body[data-theme="systeme"] .side-head, body[data-theme="systeme"] .dialog h3, body[data-theme="systeme"] .tab .title, body[data-theme="systeme"] .term-head { text-transform: uppercase; letter-spacing: .08em; }
+body[data-theme="systeme"] .dialog h3 { color: #8fd3ff; text-shadow: 0 0 10px rgba(63, 169, 255, .8); }
+body[data-theme="systeme"] .dialog h3::before { content: "[ ! ] "; color: var(--accent); }
+body[data-theme="systeme"] .tab.active { color: #e8f6ff; border-color: var(--accent); background: rgba(63, 169, 255, .12); box-shadow: 0 0 12px rgba(63, 169, 255, .35), inset 0 0 8px rgba(63, 169, 255, .15); }
+body[data-theme="systeme"] button { background: rgba(12, 29, 61, .7); }
+body[data-theme="systeme"] button:hover { box-shadow: 0 0 10px rgba(63, 169, 255, .45); }
+body[data-theme="systeme"] button.primary { background: linear-gradient(180deg, #3fa9ff, #2a6fe0); color: #02050d; border-color: #8fd3ff; box-shadow: 0 0 14px rgba(63, 169, 255, .6); }
+body[data-theme="systeme"] input, body[data-theme="systeme"] textarea, body[data-theme="systeme"] select { background: rgba(3, 8, 20, .8); border-color: rgba(63, 169, 255, .3); color: var(--text); }
+body[data-theme="systeme"] :is(input, textarea, select):focus { border-color: var(--accent); box-shadow: 0 0 10px rgba(63, 169, 255, .4); outline: none; }
+/* Fenêtre du Système : liseré lumineux et équerres aux coins */
+body[data-theme="systeme"] .term-wrap { border: 1px solid rgba(63, 169, 255, .45); box-shadow: 0 0 18px rgba(63, 169, 255, .22), inset 0 0 30px rgba(63, 169, 255, .06); }
+body[data-theme="systeme"] .term-wrap.active { border-color: rgba(92, 200, 255, .8); box-shadow: 0 0 24px rgba(63, 169, 255, .4), inset 0 0 30px rgba(63, 169, 255, .08); }
+body[data-theme="systeme"] :is(.term-wrap, .dialog)::before,
+body[data-theme="systeme"] :is(.term-wrap, .dialog)::after { content: ""; position: absolute; width: 14px; height: 14px; pointer-events: none; z-index: 2; border: 2px solid #8fd3ff; filter: drop-shadow(0 0 4px #3fa9ff); }
+body[data-theme="systeme"] :is(.term-wrap, .dialog)::before { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+body[data-theme="systeme"] :is(.term-wrap, .dialog)::after { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+body[data-theme="systeme"] .dialog { position: relative; background: rgba(6, 14, 32, .94); border-color: rgba(63, 169, 255, .6); }
+body[data-theme="systeme"] .popover { background: rgba(6, 14, 32, .96); border-color: rgba(63, 169, 255, .6); box-shadow: 0 0 20px rgba(63, 169, 255, .3); }
+body[data-theme="systeme"] .term-head { color: #8fd3ff; }
+/* Texte du terminal légèrement lumineux */
+body[data-theme="systeme"] .xterm-rows { text-shadow: 0 0 6px rgba(92, 200, 255, .35); }
+body[data-theme="systeme"] .xterm,
+body[data-theme="systeme"] .xterm .xterm-viewport,
+body[data-theme="systeme"] .xterm .xterm-screen,
+body[data-theme="systeme"] .xterm .xterm-scrollable-element { background-color: transparent !important; }
+body[data-theme="systeme"] .term-body { position: relative; }
+/* Balayage holographique très discret */
+body[data-theme="systeme"] .term-body::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(63, 169, 255, .035) 0 1px, transparent 1px 4px); }
+body[data-theme="systeme"] #preset-list li:hover, body[data-theme="systeme"] .side-list li:hover { background: rgba(63, 169, 255, .08); box-shadow: inset 2px 0 0 var(--accent); }
+body[data-theme="systeme"] .term-head span:nth-child(3) { text-transform: none; letter-spacing: 0; opacity: .7; }

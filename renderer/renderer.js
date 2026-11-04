@@ -43,6 +43,15 @@ const THEMES = {
       brightBlack: '#6b5a4f', brightRed: '#ff7b7b', brightGreen: '#c9f075', brightYellow: '#ffd865', brightBlue: '#f39477', brightMagenta: '#ffa8b8', brightCyan: '#7fe0ee', brightWhite: '#fff4ea',
     },
   },
+  systeme: {
+    label: 'Système', desc: 'Fenêtres du Système façon Solo Leveling : bleu néon, angles vifs', swatches: ['#03060f', '#0a1630', '#3fa9ff', '#9b6bff'],
+    winBg: '#03060f', fontSize: 13, lineHeight: 1.2, cursor: 'block', placeholder: '[SYSTÈME] Entrez une commande… (⌘↵ pour envoyer)',
+    xterm: {
+      background: 'rgba(0,0,0,0)', foreground: '#d4ecff', cursor: '#5cc8ff', cursorAccent: '#03060f', selectionBackground: 'rgba(63,169,255,.28)',
+      black: '#0a1630', red: '#ff5c7a', green: '#4dffc3', yellow: '#ffd36b', blue: '#3fa9ff', magenta: '#9b6bff', cyan: '#5ce1ff', white: '#a9c4e0',
+      brightBlack: '#4f6a8f', brightRed: '#ff8099', brightGreen: '#7dffd6', brightYellow: '#ffe299', brightBlue: '#7cc4ff', brightMagenta: '#b896ff', brightCyan: '#8eecff', brightWhite: '#f0f8ff',
+    },
+  },
 };
 THEMES.conversation = {
   ...THEMES.papier, label: 'Conversation', desc: 'Claude comme une discussion : bulles, texte lisible, actions résumées',
