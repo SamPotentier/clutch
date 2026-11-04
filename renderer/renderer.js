@@ -252,7 +252,7 @@ function renderPresets() {
       ${n ? `<span class="count">${n}</span>` : ''}
       <div class="tools"><button data-a="skill" title="Lancer un skill sur ce projet (⌘J)">${icon('zap')}</button><button data-a="edit" title="Modifier">${icon('pencil')}</button><button data-a="del" title="Supprimer">${icon('trash')}</button></div>`;
     li.onclick = (e) => {
-      const a = e.target.dataset?.a;
+      const a = e.target.closest('[data-a]')?.dataset.a;
       if (a === 'skill') return openPalette({ mode: 'skills', presetId: p.id });
       if (a === 'edit') return openPresetModal(p);
       if (a === 'del') return deletePreset(p);
@@ -359,7 +359,7 @@ function renderAccounts() {
       renderSpaceSwitch();
     };
     row.onclick = (e) => {
-      const action = e.target.dataset?.a;
+      const action = e.target.closest('[data-a]')?.dataset.a;
       if (action === 'login') {
         closeOverlay($('#accounts'));
         switchSpace(a.id);
@@ -680,7 +680,7 @@ function renderSkills() {
         <div class="tools"><button data-a="edit" title="Modifier le modèle">${icon('pencil')}</button></div>
         <button class="star" data-a="fav" title="${s.fav ? 'Retirer des favoris' : 'Ajouter aux favoris'}">${icon('star', s.fav ? 'filled' : '')}</button>`;
       li.onclick = (e) => {
-        const a = e.target.dataset?.a;
+        const a = e.target.closest('[data-a]')?.dataset.a;
         if (a === 'fav') return toggleFav(s);
         if (a === 'edit') return openSkillEdit(s);
         openSkillRun(s, activeTab()?.presetId);

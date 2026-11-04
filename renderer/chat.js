@@ -332,7 +332,7 @@ function onControlRequest(tab, ev) {
       <button data-a="deny">Refuser</button>
     </div>`);
   card.querySelector('.perm-actions').onclick = (e) => {
-    const a = e.target.dataset?.a;
+    const a = e.target.closest('[data-a]')?.dataset.a;
     if (!a) return;
     if (a === 'deny') {
       tab.userDenials = (tab.userDenials || 0) + 1;
