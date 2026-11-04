@@ -13,11 +13,14 @@ done
 iconutil -c icns $ICONSET -o build/icon.icns
 rm -rf $ICONSET
 
-# Paquet sans asar : node-pty (natif) et les fichiers xterm sont chargés depuis le disque
+# Paquet sans asar : node-pty (natif) et les fichiers xterm sont chargés depuis le disque.
+# Le packager cherche aussi le format « .icon » des derniers macOS et prévient s'il manque :
+# l'icône .icns suffit, on masque cet avertissement (pipefail garde les vraies erreurs).
+setopt pipefail
 npx --yes @electron/packager@20.3.0 . "Clutch" \
   --platform=darwin --arch=$(uname -m) --icon=build/icon.icns \
   --app-bundle-id=biz.cicd.clutch --no-asar --overwrite --out=dist \
-  --ignore='^/dist' --ignore='^/build' --ignore='^/README.md'
+  --ignore='^/dist' --ignore='^/build' --ignore='^/README.md' 2>&1 | grep -v 'with extension ".icon"'
 
 APP="dist/Clutch-darwin-$(uname -m)/Clutch.app"
 chmod +x "$APP"/Contents/Resources/app/node_modules/node-pty/prebuilds/darwin-*/spawn-helper
