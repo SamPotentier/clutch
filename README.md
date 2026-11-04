@@ -2,7 +2,8 @@
 
 Gestionnaire de terminaux multi-projets (Electron + xterm.js + node-pty).
 
-- **Presets** : un nom, un dossier, une commande de lancement (par défaut `claude`) et une couleur.
+- **Presets** : un nom, un dossier, une couleur et ce qui s'ouvre au lancement.
+- **Au lancement** : une liste de terminaux, chacun dans la racine ou un sous-dossier (`front`, `back`…) et lançant Claude, un simple shell ou une commande (`npm run dev`…). « ＋ Un par sous-dossier » ajoute un shell par sous-dossier. Avec plusieurs terminaux, choisis la disposition : onglets, côte à côte, empilés ou grille. Le bouton ▦/▭ bascule le groupe actif entre sa disposition et les onglets.
 - **Lancement rapide** : clic sur un projet dans la barre latérale, ou `⌘K` puis recherche floue.
 - **Plusieurs terminaux** en onglets ou en grille (`⌘G`), avec un badge d'activité sur les onglets en arrière-plan.
 - **Barre de prompt** : écris un prompt multi-ligne et envoie-le au terminal actif ou à tous les terminaux (`⌘↵`). Les prompts récurrents s'enregistrent avec ★.

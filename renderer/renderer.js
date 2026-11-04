@@ -68,12 +68,12 @@ function persist() {
 
 /* ---------- Terminaux ---------- */
 
-async function openTerminal({ name, cwd, command, color, presetId, accountId = state.account }) {
+async function openTerminal({ name, cwd, command, color, presetId, accountId = state.account, group }) {
   const sameName = state.tabs.filter((t) => t.baseName === name).length;
   const tab = {
     key: uid(), presetId, baseName: name, title: sameName ? `${name} (${sameName + 1})` : name,
     cwd, command, color: color || '#737aa2', ptyId: null, exited: false,
-    accountId, configDir: accountFor(accountId).dir,
+    accountId, configDir: accountFor(accountId).dir, group,
   };
 
   tab.wrap = document.createElement('div');
@@ -170,6 +170,7 @@ function activate(key) {
     t.wrap.classList.toggle('active', t.key === key);
   }
   renderTabs();
+  applyLayout();
   refreshDiff();
   requestAnimationFrame(() => { fitTab(tab); focusTab(tab); });
 }
@@ -221,9 +222,11 @@ function renderPresets() {
     if (q && !`${p.name} ${p.cwd}`.toLowerCase().includes(q)) continue;
     const n = state.tabs.filter((t) => t.presetId === p.id && !t.exited).length;
     const li = document.createElement('li');
-    li.title = `${p.cwd}${p.command ? '\n$ ' + p.command : ''}`;
+    const panes = panesOf(p);
+    const summary = panes.length > 1 ? `${panes.length} terminaux` : p.command;
+    li.title = `${p.cwd}\n${panes.map((x) => '• ' + paneLabel(x)).join('\n')}`;
     li.innerHTML = `<span class="dot" style="background:${p.color}"></span>
-      <div class="info"><div class="name">${esc(p.name)}</div><div class="path">${esc(shortPath(p.cwd))}${p.command ? ' · ' + esc(p.command) : ''}</div></div>
+      <div class="info"><div class="name">${esc(p.name)}</div><div class="path">${esc(shortPath(p.cwd))}${summary ? ' · ' + esc(summary) : ''}</div></div>
       ${n ? `<span class="count">${n}</span>` : ''}
       <div class="tools"><button data-a="skill" title="Lancer un skill sur ce projet (⌘J)">⚡</button><button data-a="edit" title="Modifier">✎</button><button data-a="del" title="Supprimer">🗑</button></div>`;
     li.onclick = (e) => {
@@ -238,19 +241,30 @@ function renderPresets() {
   if (!spacePresets().length) el.innerHTML = '<li style="cursor:default;color:var(--muted)">Aucun preset. Clique sur ＋ ou ⇩ pour importer un dossier de projets.</li>';
 }
 
+// Terminaux lancés ensemble par un projet (même groupe), encore ouverts dans l'espace
+const groupTabs = (g) => (g ? spaceTabs().filter((t) => t.group === g) : []);
+const splitGroup = () => { const g = activeTab()?.group; return groupTabs(g).length > 1 && g.split !== 'tabs' ? g : null; };
+
+// Le groupe de l'onglet actif impose sa disposition ; sinon, grille globale ou onglets
 function applyLayout() {
-  const grid = state.layout === 'grid' && spaceTabs().length > 1;
+  const g = splitGroup();
+  let shown = [];
+  let mode = 'tabs';
+  if (g && g.layout !== 'tabs') { shown = groupTabs(g); mode = g.layout; }
+  else if (!g && state.layout === 'grid' && spaceTabs().length > 1) { shown = spaceTabs(); mode = 'grid'; }
   const terms = $('#terms');
-  terms.classList.toggle('grid', grid);
-  if (grid) {
-    const n = spaceTabs().length;
-    const cols = Math.ceil(Math.sqrt(n));
+  terms.classList.toggle('grid', mode !== 'tabs');
+  for (const t of state.tabs) t.wrap.classList.toggle('shown', shown.includes(t));
+  if (mode !== 'tabs') {
+    const n = shown.length;
+    const cols = mode === 'cols' ? n : mode === 'rows' ? 1 : Math.ceil(Math.sqrt(n));
     terms.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
     terms.style.gridTemplateRows = `repeat(${Math.ceil(n / cols)}, minmax(0, 1fr))`;
   } else {
     terms.style.gridTemplateColumns = terms.style.gridTemplateRows = '';
   }
-  $('#btn-layout').textContent = state.layout === 'grid' ? '▭' : '▦';
+  $('#btn-layout').textContent = mode !== 'tabs' ? '▭' : '▦';
+  $('#btn-layout').title = g ? (mode !== 'tabs' ? 'Afficher en onglets' : 'Revenir à la disposition du projet') : 'Grille / onglets (⌘G)';
   requestAnimationFrame(() => state.tabs.forEach(fitTab));
 }
 
@@ -259,14 +273,32 @@ function applyLayout() {
 const isClaudeCmd = (c) => /^claude\b/.test(c || '');
 
 // Ouvre une session sur un projet : vue conversation (thème Conversation) ou terminal
-function openSession(p, { prompt = '', title, accountId = p.accountId || '' } = {}) {
+function openSession(p, { prompt = '', title, accountId = p.accountId || '', dir = '', cmd = p.command, group } = {}) {
   const name = title || p.name;
-  const claude = isClaudeCmd(p.command);
+  const cwd = dir ? `${p.cwd.replace(/\/+$/, '')}/${dir}` : p.cwd;
+  const claude = isClaudeCmd(cmd);
   if (currentTheme().chat && (claude || prompt)) {
-    return openChat({ name, cwd: p.cwd, color: p.color, presetId: p.id, accountId, extraArgs: claude ? p.command.replace(/^claude\s*/, '') : '', prompt });
+    return openChat({ name, cwd, color: p.color, presetId: p.id, accountId, extraArgs: claude ? cmd.replace(/^claude\s*/, '') : '', prompt, group });
   }
-  const command = prompt ? `${claude ? p.command : 'claude'} ${shq(prompt)}` : p.command;
-  return openTerminal({ name, cwd: p.cwd, command, color: p.color, presetId: p.id, accountId });
+  const command = prompt ? `${claude ? cmd : 'claude'} ${shq(prompt)}` : cmd;
+  return openTerminal({ name, cwd, command, color: p.color, presetId: p.id, accountId, group });
+}
+
+// Ce que lance un projet : une liste de terminaux (dossier + commande) et une disposition
+const panesOf = (p) => (p.panes?.length ? p.panes : [{ dir: '', cmd: p.command || '' }]);
+const paneLabel = (x) => `${x.dir || 'racine'}${x.cmd ? ' · ' + x.cmd : ' · shell'}`;
+
+async function launchPreset(p) {
+  const panes = panesOf(p);
+  if (panes.length === 1) return openSession(p, panes[0]);
+  const layout = p.layout || 'cols';
+  const group = { id: uid(), layout, split: layout };
+  const tabs = [];
+  for (const x of panes) {
+    const title = x.dir ? `${p.name} › ${x.dir}` : p.name;
+    tabs.push(await openSession(p, { ...x, title, group }));
+  }
+  activate(tabs[0].key);
 }
 
 /* ---------- Comptes Claude ---------- */
@@ -392,8 +424,6 @@ $('#preset-account').addEventListener('change', (e) => {
 });
 $('#accounts').addEventListener('mousedown', (e) => { if (e.target.id === 'accounts') closeOverlay($('#accounts')); });
 
-const launchPreset = (p) => openSession(p);
-
 function deletePreset(p) {
   if (!confirm(`Supprimer le preset « ${p.name} » ?`)) return;
   state.presets = state.presets.filter((x) => x.id !== p.id);
@@ -410,7 +440,14 @@ function openPresetModal(p) {
   $('#modal-title').textContent = p ? 'Modifier le preset' : 'Nouveau preset';
   f.name.value = p?.name || '';
   f.cwd.value = p?.cwd || '';
-  f.command.value = p ? p.command || '' : 'claude';
+  modalPanes = (p ? panesOf(p) : [{ dir: '', cmd: 'claude' }]).map(({ dir, cmd }) => {
+    const kind = paneKind(cmd);
+    return { dir, kind, arg: kind === 'claude' ? cmd.replace(/^claude\s*/, '') : cmd };
+  });
+  modalLayout = p?.layout || 'cols';
+  modalSubdirs = [];
+  renderLaunch();
+  loadModalSubdirs();
   $('#preset-account').innerHTML = accountOptions(p ? p.accountId : state.account) + '<option value="__add">＋ Ajouter un compte…</option>';
   pickedColor = p?.color || COLORS[state.presets.length % COLORS.length];
   renderColors();
@@ -430,12 +467,76 @@ function renderColors() {
   }
 }
 
+/* Lancement : terminaux à ouvrir et disposition */
+let modalPanes = [];
+let modalLayout = 'cols';
+let modalSubdirs = [];
+const PANE_KINDS = [['claude', 'Claude'], ['', 'Terminal'], ['custom', 'Commande…']];
+const paneKind = (cmd) => (isClaudeCmd(cmd) ? 'claude' : cmd ? 'custom' : '');
+const paneCmd = ({ kind, arg }) => (kind === 'claude' ? `claude ${arg.trim()}`.trim() : kind === 'custom' ? arg.trim() : '');
+
+async function loadModalSubdirs() {
+  const cwd = $('#preset-form').cwd.value.trim();
+  modalSubdirs = cwd ? (await api.subdirs(cwd)).map((d) => d.name).filter((n) => n !== 'node_modules') : [];
+  renderLaunch();
+}
+
+function renderLaunch() {
+  const el = $('#launch-panes');
+  el.innerHTML = '';
+  modalPanes.forEach((x, i) => {
+    const dirs = ['', ...modalSubdirs];
+    if (x.dir && !dirs.includes(x.dir)) dirs.push(x.dir);
+    const row = document.createElement('div');
+    row.className = 'pane-row';
+    row.innerHTML = `
+      <select class="pane-dir" title="Dossier">${dirs.map((d) => `<option value="${esc(d)}">📁 ${d ? esc(d) : 'racine'}</option>`).join('')}</select>
+      <select class="pane-kind">${PANE_KINDS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
+      <input class="pane-cmd${x.kind ? '' : ' hidden'}" spellcheck="false" placeholder="${x.kind === 'claude' ? 'options, ex. --model sonnet' : 'npm run dev'}">
+      <button type="button" class="pane-del" title="Retirer"${modalPanes.length === 1 ? ' disabled' : ''}>×</button>`;
+    row.querySelector('.pane-dir').value = x.dir;
+    row.querySelector('.pane-kind').value = x.kind;
+    row.querySelector('.pane-cmd').value = x.arg;
+    row.querySelector('.pane-dir').onchange = (e) => { x.dir = e.target.value; };
+    row.querySelector('.pane-kind').onchange = (e) => {
+      x.kind = e.target.value;
+      x.arg = '';
+      renderLaunch();
+      if (x.kind === 'custom') el.children[i].querySelector('.pane-cmd').focus();
+    };
+    row.querySelector('.pane-cmd').oninput = (e) => { x.arg = e.target.value; };
+    row.querySelector('.pane-del').onclick = () => { modalPanes.splice(i, 1); renderLaunch(); };
+    el.appendChild(row);
+  });
+  const seg = $('#launch-layout');
+  seg.classList.toggle('disabled', modalPanes.length < 2);
+  seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.l === modalLayout));
+}
+
+$('#launch-layout').onclick = (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  modalLayout = b.dataset.l;
+  renderLaunch();
+};
+$('#btn-add-pane').onclick = () => { modalPanes.push({ dir: '', kind: '', arg: '' }); renderLaunch(); };
+$('#btn-add-subs').onclick = async () => {
+  if (!modalSubdirs.length) await loadModalSubdirs();
+  const have = new Set(modalPanes.filter((x) => !x.kind).map((x) => x.dir));
+  modalSubdirs.filter((d) => !have.has(d)).forEach((dir) => modalPanes.push({ dir, kind: '', arg: '' }));
+  renderLaunch();
+};
+$('#preset-form').cwd.addEventListener('change', loadModalSubdirs);
+
 const closeModal = () => { $('#modal').classList.add('hidden'); focusActive(); };
 
 $('#preset-form').onsubmit = (e) => {
   e.preventDefault();
   const f = e.target;
-  const data = { name: f.name.value.trim(), cwd: f.cwd.value.trim(), command: f.command.value.trim(), color: pickedColor, accountId: f.account.value === '__add' ? '' : f.account.value };
+  const panes = modalPanes.map((x) => ({ dir: x.dir, cmd: paneCmd(x) }));
+  // `command` reste la commande principale (celle utilisée pour lancer un skill sur le projet)
+  const main = panes.find((x) => isClaudeCmd(x.cmd)) || panes[0];
+  const data = { name: f.name.value.trim(), cwd: f.cwd.value.trim(), command: main.cmd, panes, layout: modalLayout, color: pickedColor, accountId: f.account.value === '__add' ? '' : f.account.value };
   if (editing) Object.assign(editing, data);
   else state.presets.push({ id: uid(), ...data });
   if (data.accountId !== state.account) renderSpaceSwitch();
@@ -452,6 +553,7 @@ $('#btn-browse').onclick = async () => {
   const f = $('#preset-form');
   f.cwd.value = dir;
   if (!f.name.value) f.name.value = dir.split('/').pop();
+  loadModalSubdirs();
 };
 $('#btn-add').onclick = () => openPresetModal();
 $('#btn-import').onclick = async () => {
@@ -467,7 +569,12 @@ $('#btn-import').onclick = async () => {
 };
 $('#btn-free').onclick = () => openTerminal({ name: 'shell', cwd: '~', command: '' });
 $('#preset-filter').oninput = renderPresets;
-$('#btn-layout').onclick = () => { state.layout = state.layout === 'grid' ? 'tabs' : 'grid'; persist(); applyLayout(); };
+$('#btn-layout').onclick = () => {
+  const g = splitGroup();
+  if (g) g.layout = g.layout === 'tabs' ? g.split : 'tabs';
+  else { state.layout = state.layout === 'grid' ? 'tabs' : 'grid'; persist(); }
+  applyLayout();
+};
 
 /* ---------- Skills ---------- */
 

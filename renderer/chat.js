@@ -77,12 +77,12 @@ function md(src) {
 
 /* Ouverture et cycle de vie d'une session */
 
-async function openChat({ name, cwd, color, presetId, accountId = state.account, extraArgs, prompt }) {
+async function openChat({ name, cwd, color, presetId, accountId = state.account, extraArgs, prompt, group }) {
   const sameName = state.tabs.filter((t) => t.baseName === name).length;
   const tab = {
     kind: 'chat', key: uid(), presetId, baseName: name, title: sameName ? `${name} (${sameName + 1})` : name,
     cwd, command: 'claude', color: color || '#737aa2', extraArgs: extraArgs || '', accountId, configDir: accountFor(accountId).dir, mode: state.chatMode || 'acceptEdits',
-    exited: false, busy: false, sessionId: null, model: '', tools: new Map(), blocks: [], stderr: '',
+    group, exited: false, busy: false, sessionId: null, model: '', tools: new Map(), blocks: [], stderr: '',
   };
   tab.wrap = el('div', 'term-wrap chat-wrap', `
     <div class="term-head"><span class="dot" style="background:${tab.color}"></span><span>${esc(tab.title)}</span><span>${esc(shortPath(cwd))}</span></div>
@@ -176,9 +176,9 @@ function interruptChat(tab) {
 
 function continueInTerminal(tab) {
   if (!tab.sessionId) return addNotice(tab, 'Envoie d’abord un message : la session n’existe pas encore.');
-  const { baseName, cwd, color, presetId, sessionId, extraArgs, accountId } = tab;
+  const { baseName, cwd, color, presetId, sessionId, extraArgs, accountId, group } = tab;
   closeTab(tab.key);
-  openTerminal({ name: baseName, cwd, color, presetId, accountId, command: `claude ${extraArgs ? extraArgs + ' ' : ''}--resume ${sessionId}` });
+  openTerminal({ name: baseName, cwd, color, presetId, accountId, group, command: `claude ${extraArgs ? extraArgs + ' ' : ''}--resume ${sessionId}` });
 }
 
 /* Événements du processus */

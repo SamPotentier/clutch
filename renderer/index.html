@@ -113,9 +113,21 @@
           <button type="button" id="btn-browse">Parcourir…</button>
         </div>
       </label>
-      <label>Commande au lancement <small>(vide = simple shell)</small>
-        <input name="command" spellcheck="false" placeholder="claude">
-      </label>
+      <div class="launch">
+        <div class="launch-head">Au lancement <small>— ce qui s'ouvre quand tu cliques sur le projet</small></div>
+        <div id="launch-panes"></div>
+        <div class="launch-add">
+          <button type="button" id="btn-add-pane">＋ Terminal</button>
+          <button type="button" id="btn-add-subs" title="Ajoute un terminal dans chaque sous-dossier (front, back…)">＋ Un par sous-dossier</button>
+        </div>
+        <div class="launch-head">Disposition</div>
+        <div id="launch-layout" class="seg">
+          <button type="button" data-l="tabs">▭ Onglets</button>
+          <button type="button" data-l="cols">◫ Côte à côte</button>
+          <button type="button" data-l="rows">⬒ Empilés</button>
+          <button type="button" data-l="grid">▦ Grille</button>
+        </div>
+      </div>
       <label>Compte Claude<select name="account" id="preset-account"></select></label>
       <label>Couleur<div id="color-picker" class="colors"></div></label>
       <div class="dialog-actions">

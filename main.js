@@ -408,6 +408,7 @@ ipcMain.handle('dialog:folder', async () => {
 });
 ipcMain.handle('fs:subdirs', (_e, dir) => {
   try {
+    dir = expandHome(dir);
     return fs.readdirSync(dir, { withFileTypes: true })
       .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
       .map((d) => ({ name: d.name, path: path.join(dir, d.name) }));
