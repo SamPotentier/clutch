@@ -21,7 +21,7 @@ npx --yes @electron/packager@20.3.0 . "Clutch" \
 
 APP="dist/Clutch-darwin-$(uname -m)/Clutch.app"
 chmod +x "$APP"/Contents/Resources/app/node_modules/node-pty/prebuilds/darwin-*/spawn-helper
-rm -rf "/Applications/Clutch.app" "/Applications/Terminal Hub.app" dist/Terminal\ Hub-darwin-*
+rm -rf "/Applications/Clutch.app" "/Applications/Terminal Hub.app" dist/Terminal\ Hub-darwin-*(N)
 cp -R "$APP" /Applications/
 echo "Installé : /Applications/Clutch.app"
 
