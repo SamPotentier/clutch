@@ -476,6 +476,17 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // Comme Discord : la croix cache la fenêtre, les terminaux continuent ; ⌘Q quitte vraiment
+  win.on('close', (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    if (win.isFullScreen()) {
+      win.once('leave-full-screen', () => win.hide());
+      win.setFullScreen(false);
+    } else {
+      win.hide();
+    }
+  });
   // Un lien cliqué dans la page s'ouvre dans le navigateur au lieu de remplacer l'app
   win.webContents.on('will-navigate', (e, url) => {
     if (url.startsWith('file:')) return;
@@ -492,10 +503,12 @@ app.whenReady().then(() => {
   migrateOldData();
   buildMenu();
   createWindow();
-  app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow());
+  app.on('activate', () => (win && !win.isDestroyed() ? win.show() : createWindow()));
 });
 
+let quitting = false;
 app.on('before-quit', () => {
+  quitting = true;
   for (const p of ptys.values()) { try { p.kill(); } catch {} }
   for (const c of chats.values()) { try { c.kill(); } catch {} }
 });
