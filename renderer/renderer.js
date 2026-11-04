@@ -14,11 +14,13 @@ const NERD_MONO = '"MesloLGS NF", "JetBrainsMono Nerd Font", "Hack Nerd Font", "
 const THEMES = {
   nuit: {
     label: 'Nuit', desc: 'Sombre et sobre, le thème d’origine', swatches: ['#16161e', '#24283b', '#7aa2f7', '#9ece6a'],
+    scroll: '#7aa2f7',
     winBg: '#16161e', fontSize: 13, lineHeight: 1.15, cursor: 'block', placeholder: 'Prompt à envoyer au terminal… (⌘↵ pour envoyer)',
     xterm: THEME,
   },
   glass: {
     label: 'Glass', desc: 'Verre dépoli sur fond coloré', swatches: ['#7c5cff', '#00c2ff', '#ff54a0', 'rgba(255,255,255,.5)'],
+    scroll: '#ffffff',
     winBg: '#0b0b1a', fontSize: 13, lineHeight: 1.2, cursor: 'bar', placeholder: 'Prompt à envoyer au terminal… (⌘↵ pour envoyer)',
     xterm: {
       ...THEME, background: 'rgba(0,0,0,0)', foreground: '#f4f4ff', cursor: '#ffffff', selectionBackground: 'rgba(255,255,255,.22)',
@@ -27,6 +29,7 @@ const THEMES = {
   },
   papier: {
     label: 'Papier', desc: 'Clair et doux, loin de l’ambiance terminal', swatches: ['#f4f1ea', '#fffefb', '#c96442', '#2d2a24'],
+    scroll: '#c96442',
     winBg: '#f4f1ea', fontSize: 14, lineHeight: 1.45, cursor: 'bar', placeholder: 'Écris ton message à Claude… (⌘↵ pour envoyer)',
     xterm: {
       background: '#fffefb', foreground: '#2d2a24', cursor: '#c96442', cursorAccent: '#fffefb', selectionBackground: '#f1d9cc',
@@ -36,6 +39,7 @@ const THEMES = {
   },
   retro: {
     label: 'Rétro', desc: 'Arcade pixel, assorti au logo', swatches: ['#070707', '#e8795a', '#f5c542', '#b6e35a'],
+    scroll: '#e8795a',
     winBg: '#070707', fontSize: 13, lineHeight: 1.2, cursor: 'block', placeholder: '> PROMPT… (⌘↵ POUR ENVOYER)',
     xterm: {
       background: '#070707', foreground: '#f3e6da', cursor: '#e8795a', cursorAccent: '#070707', selectionBackground: '#4a2a1f',
@@ -45,6 +49,7 @@ const THEMES = {
   },
   systeme: {
     label: 'Système', desc: 'Fenêtres du Système façon Solo Leveling : bleu néon, angles vifs', swatches: ['#03060f', '#0a1630', '#3fa9ff', '#9b6bff'],
+    scroll: '#3fa9ff',
     winBg: '#03060f', fontSize: 13, lineHeight: 1.2, cursor: 'block', placeholder: '[SYSTÈME] Entrez une commande… (⌘↵ pour envoyer)',
     xterm: {
       background: 'rgba(0,0,0,0)', foreground: '#d4ecff', cursor: '#5cc8ff', cursorAccent: '#03060f', selectionBackground: 'rgba(63,169,255,.28)',
@@ -54,6 +59,7 @@ const THEMES = {
   },
   kyoto: {
     label: 'Kyōto', desc: 'Encre sumi, vermillon des torii, vagues seigaiha', swatches: ['#14110f', '#211b16', '#e0533d', '#f2a7b8'],
+    scroll: '#e0533d',
     winBg: '#14110f', fontSize: 13, lineHeight: 1.25, cursor: 'bar', placeholder: '一 Écris ta commande… (⌘↵ pour envoyer)',
     xterm: {
       background: '#17130f', foreground: '#ece3d3', cursor: '#e0533d', cursorAccent: '#17130f', selectionBackground: 'rgba(224,83,61,.25)',
@@ -70,9 +76,12 @@ THEMES.conversation = {
 const currentTheme = () => THEMES[state.theme] || THEMES.nuit;
 // Barre de défilement discrète, lisible sur fond clair comme sombre
 const SCROLLBAR = { scrollbarSliderBackground: 'rgba(127,127,127,.22)', scrollbarSliderHoverBackground: 'rgba(127,127,127,.38)', scrollbarSliderActiveBackground: 'rgba(127,127,127,.5)', overviewRulerBorder: 'rgba(0,0,0,0)' };
+// Barre du terminal (dessinée par xterm) teintée par la couleur `scroll` du thème, comme les barres CSS
+const rgba = (hex, a) => `rgba(${hex.match(/\w\w/g).map((h) => parseInt(h, 16)).join(',')},${a})`;
+const scrollbarFor = (th) => (th.scroll ? { scrollbarSliderBackground: rgba(th.scroll, .3), scrollbarSliderHoverBackground: rgba(th.scroll, .55), scrollbarSliderActiveBackground: rgba(th.scroll, .8) } : {});
 // Avec un fond personnalisé, le terminal devient transparent pour laisser voir l'image
 const hasBg = () => state.bg.kind === 'color' || (state.bg.kind === 'image' && !!state.bg.image);
-const termOptions = (th) => ({ theme: { ...SCROLLBAR, ...th.xterm, ...(hasBg() ? { background: 'rgba(0,0,0,0)' } : {}) }, fontSize: th.fontSize, lineHeight: th.lineHeight, cursorStyle: th.cursor, fontFamily: NERD_MONO });
+const termOptions = (th) => ({ theme: { ...SCROLLBAR, ...scrollbarFor(th), ...th.xterm, ...(hasBg() ? { background: 'rgba(0,0,0,0)' } : {}) }, fontSize: th.fontSize, lineHeight: th.lineHeight, cursorStyle: th.cursor, fontFamily: NERD_MONO });
 
 const state = { theme: 'nuit', accounts: [], account: '', defaultName: 'Pro', lastActive: {}, presets: [], prompts: [], layout: 'tabs', tabs: [], activeKey: null, skills: [], skillConfigs: {}, customSkills: [],
   diff: { open: false, scope: 'session', auto: true, width: 560, collapsed: new Set() },

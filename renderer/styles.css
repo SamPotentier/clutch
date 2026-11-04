@@ -165,9 +165,6 @@ button.danger { color: var(--danger); }
 .side-list li:hover .star, .side-list li.fav .star { visibility: visible; }
 .side-list li.fav .star { color: var(--warn); }
 .side-list .star:hover { color: var(--warn); }
-.side-list::-webkit-scrollbar { width: 8px; }
-.side-list::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 4px; }
-.side-list::-webkit-scrollbar-track { background: transparent; }
 
 /* Espace de travail : terminal + diff */
 #workspace { flex: 1; display: flex; min-height: 0; }
@@ -695,3 +692,24 @@ button:has(> .ic) { display: inline-flex; align-items: center; justify-content: 
 .todos .ic { width: 13px; height: 13px; vertical-align: -2px; margin-right: 4px; }
 .chat-notice .ic { margin-right: 4px; }
 .seg button .ic { width: 13px; height: 13px; }
+
+/* Barres de défilement aux couleurs du thème (l'accent, discret au repos) */
+body {
+  --sb: color-mix(in srgb, var(--accent) 28%, transparent);
+  --sb-hover: color-mix(in srgb, var(--accent) 55%, transparent);
+  --sb-radius: 10px;
+  --sb-inset: 3px;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background-color: var(--sb); background-clip: padding-box; border: var(--sb-inset) solid transparent; border-radius: var(--sb-radius); min-height: 32px; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--sb-hover); }
+::-webkit-scrollbar-thumb:active { background-color: var(--accent); }
+body[data-theme="glass"] { --sb: rgba(255, 255, 255, .22); --sb-hover: rgba(255, 255, 255, .4); }
+body[data-theme="retro"] { --sb: var(--accent); --sb-hover: var(--warn); --sb-radius: 0; --sb-inset: 2px; }
+body[data-theme="systeme"] { --sb: rgba(63, 169, 255, .45); --sb-hover: rgba(92, 200, 255, .8); --sb-radius: 1px; }
+body[data-theme="systeme"] ::-webkit-scrollbar-thumb { box-shadow: inset 0 0 6px rgba(143, 211, 255, .6); }
+body[data-theme="kyoto"] { --sb-radius: 2px; --sb-inset: 4px; }
+/* Barre du terminal (xterm 6) : même forme que les barres CSS */
+.xterm .xterm-scrollable-element > .scrollbar.vertical > .slider { left: var(--sb-inset) !important; width: calc(100% - 2 * var(--sb-inset)) !important; border-radius: var(--sb-radius); }
+body[data-theme="systeme"] .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider { box-shadow: inset 0 0 6px rgba(143, 211, 255, .6); }
