@@ -1340,7 +1340,8 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'n') openPresetModal();
   else if (k === 'g') $('#btn-layout').click();
   else if (k === 'd') toggleDiff();
-  else if (/^[1-9]$/.test(k)) { const t = spaceTabs()[+k - 1]; if (t) activate(t.key); }
+  // e.code (touche physique) : en AZERTY, ⌘ + la touche 1 donne « & » dans e.key
+  else if (/^Digit[1-9]$/.test(e.code) && !e.shiftKey) { const t = spaceTabs()[+e.code.slice(5) - 1]; if (t) activate(t.key); }
   else if (e.shiftKey && (k === ']' || k === '}' || k === '[' || k === '{')) {
     const tabs = spaceTabs();
     const i = tabs.findIndex((t) => t.key === state.activeKey);
