@@ -85,13 +85,14 @@ const termOptions = (th) => ({ theme: { ...SCROLLBAR, ...scrollbarFor(th), ...th
 
 const state = { theme: 'nuit', accounts: [], account: '', defaultName: 'Pro', lastActive: {}, presets: [], prompts: [], layout: 'tabs', tabs: [], activeKey: null, skills: [], skillConfigs: {}, customSkills: [],
   diff: { open: false, scope: 'session', auto: true, width: 560, collapsed: new Set() },
-  bg: { kind: '', color: '#1e2a44', image: '', imageName: '', opacity: 78, blur: 0 } };
+  bg: { kind: '', color: '#1e2a44', image: '', imageName: '', opacity: 78, blur: 0 },
+  sound: { name: 'carillon', volume: 60 } };
 const byPty = new Map(); // ptyId -> tab
 
 function persist() {
   api.saveData({
     theme: state.theme, accounts: state.accounts, account: state.account, defaultName: state.defaultName, chatMode: state.chatMode, presets: state.presets, prompts: state.prompts, layout: state.layout,
-    skillConfigs: state.skillConfigs, customSkills: state.customSkills, bg: state.bg,
+    skillConfigs: state.skillConfigs, customSkills: state.customSkills, bg: state.bg, sound: state.sound,
     diff: { scope: state.diff.scope, auto: state.diff.auto, width: state.diff.width },
   });
 }
@@ -243,11 +244,52 @@ const cstateIcon = (t) => (CSTATE[t.cstate] ? `<span class="cstate ${t.cstate}" 
 
 function setClaudeState(tab, s) {
   if (tab.cstate === s) return;
+  // Claude vient de finir (ou demande quelque chose) : petit son
+  if (tab.cstate === 'working' && s === 'waiting') playDoneSound(tab);
   tab.cstate = s;
   const head = tab.wrap.querySelector('.term-head .cstate');
   if (head) head.outerHTML = cstateIcon(tab) || '<span class="cstate"></span>';
   renderTabs();
   renderPresets();
+}
+
+/* ---------- Son de fin ---------- */
+
+// Sons synthétisés (Web Audio), sans fichier : [fréquence, départ (s), durée (s), forme, glissando vers]
+const SOUNDS = {
+  carillon: { label: 'Carillon', notes: [[880, 0, .7, 'sine'], [1318.5, .13, .9, 'sine']] },
+  goutte: { label: 'Goutte', notes: [[1250, 0, .28, 'sine', 520]] },
+  cloche: { label: 'Cloche', notes: [[660, 0, 1.4, 'sine'], [1320, 0, .9, 'sine'], [1980, 0, .5, 'sine']] },
+  arcade: { label: 'Arcade', notes: [[988, 0, .09, 'square'], [1319, .09, .22, 'square']] },
+  doux: { label: 'Doux', notes: [[523.25, 0, .9, 'triangle'], [659.25, .18, 1, 'triangle']] },
+};
+let audioCtx = null;
+
+function playSound(name, volume = state.sound.volume) {
+  const snd = SOUNDS[name];
+  if (!snd) return;
+  audioCtx ||= new AudioContext();
+  const now = audioCtx.currentTime + .02;
+  const level = (volume / 100) * (name === 'arcade' ? .06 : .22);
+  for (const [freq, at, dur, type, glideTo] of snd.notes) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now + at);
+    if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, now + at + dur * .6);
+    gain.gain.setValueAtTime(0, now + at);
+    gain.gain.linearRampToValueAtTime(level, now + at + .01);
+    gain.gain.exponentialRampToValueAtTime(.0001, now + at + dur);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(now + at);
+    osc.stop(now + at + dur + .05);
+  }
+}
+
+function playDoneSound(tab) {
+  if (!state.sound.name || Date.now() - (tab.soundAt || 0) < 1500) return;
+  tab.soundAt = Date.now();
+  playSound(state.sound.name);
 }
 
 /* ---------- Rendu ---------- */
@@ -1334,7 +1376,10 @@ function renderThemePop() {
     ${b.kind === 'image' ? `<div class="tp-row"><button id="bg-pick">${b.image ? 'Changer l’image…' : 'Choisir une image…'}</button><span class="tp-file">${esc(b.imageName || '')}</span></div>` : ''}
     ${b.kind ? `
       <label class="tp-row">Opacité des panneaux <input type="range" id="bg-opacity" min="15" max="100" value="${b.opacity}"><span>${b.opacity}%</span></label>
-      ${b.kind === 'image' ? `<label class="tp-row">Flou <input type="range" id="bg-blur" min="0" max="30" value="${b.blur}"><span>${b.blur}px</span></label>` : ''}` : ''}`;
+      ${b.kind === 'image' ? `<label class="tp-row">Flou <input type="range" id="bg-blur" min="0" max="30" value="${b.blur}"><span>${b.blur}px</span></label>` : ''}` : ''}
+    <div class="tp-head">Son quand Claude a fini</div>
+    <div class="seg tp-sound">${[['', 'Aucun'], ...Object.entries(SOUNDS).map(([k, v]) => [k, v.label])].map(([k, l]) => `<button data-sound="${k}" class="${state.sound.name === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    ${state.sound.name ? `<label class="tp-row">Volume <input type="range" id="snd-vol" min="5" max="100" value="${state.sound.volume}"><span>${state.sound.volume}%</span></label>` : ''}`;
 }
 
 const bgCache = {};
@@ -1373,6 +1418,13 @@ $('#theme-pop').addEventListener('click', async (e) => {
     return persist();
   }
   if (e.target.id === 'bg-pick') pickBg();
+  const snd = e.target.closest('[data-sound]');
+  if (snd) {
+    state.sound.name = snd.dataset.sound;
+    playSound(state.sound.name);
+    renderThemePop();
+    persist();
+  }
 });
 async function pickBg() {
   renderThemePop();
@@ -1388,6 +1440,13 @@ $('#theme-pop').addEventListener('input', (e) => {
   if (e.target.id === 'bg-color') state.bg.color = v;
   if (e.target.id === 'bg-opacity') state.bg.opacity = +v;
   if (e.target.id === 'bg-blur') state.bg.blur = +v;
+  if (e.target.id === 'snd-vol') {
+    state.sound.volume = +v;
+    e.target.nextElementSibling.textContent = `${v}%`;
+    clearTimeout(bgSaveTimer);
+    bgSaveTimer = setTimeout(() => { persist(); playSound(state.sound.name); }, 250);
+    return;
+  }
   const out = e.target.nextElementSibling;
   if (out?.tagName === 'SPAN') out.textContent = e.target.id === 'bg-blur' ? `${v}px` : `${v}%`;
   applyBg();
@@ -1706,6 +1765,7 @@ api.onRebuildLog((text) => {
   state.defaultName = data.defaultName || 'Pro';
   state.account = state.accounts.some((a) => a.id === data.account) ? data.account : '';
   Object.assign(state.bg, data.bg || {});
+  Object.assign(state.sound, data.sound || {});
   applyTheme(data.theme || 'nuit');
   applyBg();
   state.customSkills = data.customSkills || [];
