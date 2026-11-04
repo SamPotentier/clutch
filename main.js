@@ -476,7 +476,7 @@ ipcMain.handle('app:rebuild', async (_e, openCount) => {
     message: 'Mettre à jour Clutch ?',
     detail: (changes.length ? `Nouveautés :\n${changes.slice(0, 12).map((c) => `• ${c}`).join('\n')}${changes.length > 12 ? `\n… et ${changes.length - 12} autres` : ''}\n\n` : '')
       + `Clutch est ${st.remote?.length ? 'mis à jour depuis le dépôt, puis ' : ''}reconstruit depuis ${dir.replace(os.homedir(), '~')} et relancé.`
-      + (openCount ? ` ${openCount} terminal${openCount > 1 ? 'aux ouverts seront fermés' : ' ouvert sera fermé'} au moment de la relance ; les conversations Claude restent reprenables.` : ''),
+      + (openCount ? ` ${openCount > 1 ? `Les ${openCount} terminaux ouverts seront fermés` : 'Le terminal ouvert sera fermé'} au moment de la relance ; les conversations Claude restent reprenables.` : ''),
   });
   if (response !== 0) return { cancelled: true };
   const PATH = await getLoginPath();
