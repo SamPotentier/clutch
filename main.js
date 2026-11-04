@@ -31,6 +31,12 @@ function saveData(data) {
   fs.writeFileSync(dataFile(), JSON.stringify(data, null, 2));
 }
 
+const expandHome = (p) => String(p || '').replace(/^~(?=$|\/)/, os.homedir());
+
+// Compte Claude : chaque dossier de config (CLAUDE_CONFIG_DIR) a sa propre connexion, ses réglages et son historique
+const claudeEnv = (configDir) => (configDir ? { CLAUDE_CONFIG_DIR: expandHome(configDir) } : {});
+const claudeHome = (configDir) => (configDir ? expandHome(configDir) : process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'));
+
 function resolveCwd(cwd) {
   if (!cwd) return os.homedir();
   const p = cwd.replace(/^~(?=$|\/)/, os.homedir());
@@ -240,7 +246,7 @@ function getLoginPath() {
 // Petit découpage façon shell pour les options du preset (ex. « claude --model opus »)
 const splitArgs = (str) => (str.match(/"[^"]*"|'[^']*'|\S+/g) || []).map((a) => a.replace(/^(["'])(.*)\1$/, '$2'));
 
-async function startChat({ cwd, mode, resume, extraArgs }) {
+async function startChat({ cwd, mode, resume, extraArgs, configDir }) {
   const PATH = await getLoginPath();
   const args = [
     '-p', '--input-format', 'stream-json', '--output-format', 'stream-json',
@@ -250,7 +256,7 @@ async function startChat({ cwd, mode, resume, extraArgs }) {
     ...(resume ? ['--resume', resume] : []),
     ...splitArgs(extraArgs || ''),
   ];
-  const env = { ...process.env, PATH };
+  const env = { ...process.env, PATH, ...claudeEnv(configDir) };
   delete env.ELECTRON_RUN_AS_NODE;
   const id = nextId++;
   const child = spawn('claude', args, { cwd: resolveCwd(cwd), env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -280,7 +286,7 @@ async function startChat({ cwd, mode, resume, extraArgs }) {
 
 /* Historique des sessions Claude Code d'un dossier (~/.claude/projects/<dossier encodé>/<id>.jsonl) */
 
-const sessionsDir = (cwd) => path.join(os.homedir(), '.claude', 'projects', resolveCwd(cwd).replace(/[^a-zA-Z0-9]/g, '-'));
+const sessionsDir = (cwd, configDir) => path.join(claudeHome(configDir), 'projects', resolveCwd(cwd).replace(/[^a-zA-Z0-9]/g, '-'));
 
 function readChunk(file, start, length) {
   const fd = fs.openSync(file, 'r');
@@ -303,8 +309,8 @@ function promptText(entry) {
   return text.startsWith('<') ? '' : text.trim();
 }
 
-function listSessions(cwd) {
-  const dir = sessionsDir(cwd);
+function listSessions(cwd, configDir) {
+  const dir = sessionsDir(cwd, configDir);
   let files;
   try {
     files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')).map((f) => {
@@ -332,9 +338,9 @@ function listSessions(cwd) {
 }
 
 // Derniers échanges d'une session, pour réafficher la conversation avant de la reprendre
-function sessionHistory(cwd, id) {
+function sessionHistory(cwd, id, configDir) {
   try {
-    const entries = jsonLines(fs.readFileSync(path.join(sessionsDir(cwd), `${id}.jsonl`), 'utf8'))
+    const entries = jsonLines(fs.readFileSync(path.join(sessionsDir(cwd, configDir), `${id}.jsonl`), 'utf8'))
       .filter((e) => (e.type === 'user' || e.type === 'assistant') && !e.isSidechain && !e.isMeta)
       .map((e) => ({ type: e.type, message: e.message }));
     return entries.slice(-400);
@@ -343,8 +349,13 @@ function sessionHistory(cwd, id) {
   }
 }
 
-ipcMain.handle('chat:sessions', (_e, cwd) => listSessions(cwd));
-ipcMain.handle('chat:history', (_e, cwd, id) => sessionHistory(cwd, id));
+ipcMain.handle('chat:sessions', (_e, cwd, configDir) => listSessions(cwd, configDir));
+ipcMain.handle('chat:history', (_e, cwd, id, configDir) => sessionHistory(cwd, id, configDir));
+// Un compte est « connecté » si son dossier contient des identifiants ou un état de session
+ipcMain.handle('account:status', (_e, configDir) => {
+  const home = claudeHome(configDir);
+  return { exists: fs.existsSync(home), path: home };
+});
 ipcMain.handle('chat:start', (_e, opts) => startChat(opts));
 ipcMain.on('chat:send', (_e, id, text) => {
   chats.get(id)?.stdin.write(JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n');
@@ -360,7 +371,7 @@ ipcMain.on('chat:interrupt', (_e, id) => {
 });
 ipcMain.on('chat:kill', (_e, id) => { chats.get(id)?.kill(); chats.delete(id); });
 
-function createPty({ cwd, cols, rows, command }) {
+function createPty({ cwd, cols, rows, command, configDir }) {
   const shellPath = process.env.SHELL || '/bin/zsh';
   // Shell de login interactif : récupère le PATH complet (claude, nvm, brew...)
   // même quand l'app est lancée depuis le Finder. Après la commande du preset,
@@ -369,7 +380,7 @@ function createPty({ cwd, cols, rows, command }) {
     ? ['-l', '-i', '-c', `${command}; exec ${shellPath} -l -i`]
     : ['-l', '-i'];
 
-  const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'Clutch' };
+  const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'Clutch', ...claudeEnv(configDir) };
   delete env.ELECTRON_RUN_AS_NODE;
 
   const id = nextId++;

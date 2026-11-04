@@ -77,11 +77,11 @@ function md(src) {
 
 /* Ouverture et cycle de vie d'une session */
 
-async function openChat({ name, cwd, color, presetId, extraArgs, prompt }) {
+async function openChat({ name, cwd, color, presetId, accountId = '', extraArgs, prompt }) {
   const sameName = state.tabs.filter((t) => t.baseName === name).length;
   const tab = {
     kind: 'chat', key: uid(), presetId, baseName: name, title: sameName ? `${name} (${sameName + 1})` : name,
-    cwd, command: 'claude', color: color || '#737aa2', extraArgs: extraArgs || '', mode: state.chatMode || 'acceptEdits',
+    cwd, command: 'claude', color: color || '#737aa2', extraArgs: extraArgs || '', accountId, configDir: accountFor(accountId).dir, mode: state.chatMode || 'acceptEdits',
     exited: false, busy: false, sessionId: null, model: '', tools: new Map(), blocks: [], stderr: '',
   };
   tab.wrap = el('div', 'term-wrap chat-wrap', `
@@ -121,7 +121,7 @@ async function openChat({ name, cwd, color, presetId, extraArgs, prompt }) {
 async function startChatProcess(tab, resume) {
   tab.exited = false;
   tab.stderr = '';
-  tab.chatId = await api.chatStart({ cwd: tab.cwd, mode: tab.mode, resume, extraArgs: tab.extraArgs });
+  tab.chatId = await api.chatStart({ cwd: tab.cwd, mode: tab.mode, resume, extraArgs: tab.extraArgs, configDir: tab.configDir });
   byChat.set(tab.chatId, tab);
   renderChatBar(tab);
   renderTabs();
@@ -175,9 +175,9 @@ function interruptChat(tab) {
 
 function continueInTerminal(tab) {
   if (!tab.sessionId) return addNotice(tab, 'Envoie d’abord un message : la session n’existe pas encore.');
-  const { baseName, cwd, color, presetId, sessionId, extraArgs } = tab;
+  const { baseName, cwd, color, presetId, sessionId, extraArgs, accountId } = tab;
   closeTab(tab.key);
-  openTerminal({ name: baseName, cwd, color, presetId, command: `claude ${extraArgs ? extraArgs + ' ' : ''}--resume ${sessionId}` });
+  openTerminal({ name: baseName, cwd, color, presetId, accountId, command: `claude ${extraArgs ? extraArgs + ' ' : ''}--resume ${sessionId}` });
 }
 
 /* Événements du processus */
@@ -511,7 +511,7 @@ function renderWelcome(tab) {
     <div class="chat-sugg">${SUGGESTIONS.map((s) => `<button>${esc(s)}</button>`).join('')}</div>`);
   w.querySelectorAll('.chat-sugg button').forEach((b) => { b.onclick = () => chatSend(tab, b.textContent); });
   tab.log.appendChild(w);
-  api.chatSessions(tab.cwd).then((sessions) => {
+  api.chatSessions(tab.cwd, tab.configDir).then((sessions) => {
     if (!sessions.length || !w.isConnected) return;
     const recent = el('div', 'chat-recent', `<div class="chat-recent-head"><span>Reprendre une conversation</span>${sessions.length > 4 ? '<button class="link">Tout voir</button>' : ''}</div>`);
     for (const ses of sessions.slice(0, 4)) recent.appendChild(sessionItem(tab, ses));
@@ -542,7 +542,7 @@ function sessionItem(tab, ses, onPick) {
 }
 
 async function openSessionPicker(tab) {
-  const sessions = await api.chatSessions(tab.cwd);
+  const sessions = await api.chatSessions(tab.cwd, tab.configDir);
   const overlay = el('div', 'overlay', `
     <div class="dialog wide sessions">
       <h3>Reprendre une conversation · ${esc(tab.baseName)}</h3>
@@ -572,7 +572,7 @@ async function resumeSession(tab, id) {
   tab.blocks = [];
   tab.sessionId = id;
   addNotice(tab, 'Chargement de la conversation…');
-  const history = await api.chatHistory(tab.cwd, id);
+  const history = await api.chatHistory(tab.cwd, id, tab.configDir);
   tab.log.innerHTML = '';
   if (history.length >= 400) addNotice(tab, 'Seuls les derniers échanges sont affichés.');
   for (const e of history) {
@@ -599,7 +599,7 @@ function renderChatBar(tab) {
   const status = tab.wrap.querySelector('.chat-status');
   status.innerHTML = tab.busy
     ? `<span class="pulse"></span>${esc(tab.busyLabel || 'Claude travaille…')}`
-    : `<span class="ready"></span>${tab.exited ? 'Session en pause' : 'Prêt'}${tab.model ? ` · <button class="link model-link" title="Changer de modèle">${esc(tab.model.replace(/^claude-/, ''))} ▾</button>` : ''}`;
+    : `<span class="ready"></span>${tab.exited ? 'Session en pause' : 'Prêt'}${tab.accountId ? ` · <span class="account-badge small">${esc(accountFor(tab.accountId).name)}</span>` : ''}${tab.model ? ` · <button class="link model-link" title="Changer de modèle">${esc(tab.model.replace(/^claude-/, ''))} ▾</button>` : ''}`;
   status.querySelector('.model-link')?.addEventListener('click', () => openModelPicker(tab));
   tab.wrap.querySelector('.chat-stop').classList.toggle('hidden', !tab.busy);
 }

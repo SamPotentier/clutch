@@ -49,6 +49,7 @@
         <div class="tab-actions">
           <button id="btn-diff" title="Afficher les modifications (⌘D)">±</button>
           <button id="btn-layout" title="Basculer onglets / grille">▦</button>
+          <button id="btn-accounts" title="Comptes Claude">👤</button>
           <button id="btn-theme" title="Thème">◐</button>
           <div id="theme-pop" class="popover hidden"></div>
         </div>
@@ -114,6 +115,7 @@
       <label>Commande au lancement <small>(vide = simple shell)</small>
         <input name="command" spellcheck="false" placeholder="claude">
       </label>
+      <label>Compte Claude<select name="account" id="preset-account"></select></label>
       <label>Couleur<div id="color-picker" class="colors"></div></label>
       <div class="dialog-actions">
         <button type="button" id="btn-cancel">Annuler</button>
@@ -127,6 +129,7 @@
       <h3 id="skill-run-title"></h3>
       <div id="skill-run-desc" class="desc"></div>
       <label>Projet<select name="preset" id="skill-run-preset"></select></label>
+      <label id="skill-run-account-row">Compte Claude<select id="skill-run-account"></select></label>
       <div id="skill-run-fields"></div>
       <label>Lancer dans<select name="target" id="skill-run-target"></select></label>
       <label>Aperçu<pre id="skill-run-preview" class="preview"></pre></label>
@@ -157,6 +160,20 @@
         <button type="submit" class="primary">Enregistrer</button>
       </div>
     </form>
+  </div>
+
+  <div id="accounts" class="overlay hidden">
+    <div class="dialog wide">
+      <h3>Comptes Claude</h3>
+      <div class="desc">Chaque compte utilise son propre dossier de configuration (<code>CLAUDE_CONFIG_DIR</code>) : connexion, réglages et historique séparés. Choisis ensuite le compte de chaque projet dans ses réglages.</div>
+      <div id="account-list"></div>
+      <form id="account-form" class="account-add">
+        <input name="name" placeholder="Nom (ex. Perso)" required spellcheck="false">
+        <input name="dir" placeholder="~/.claude-perso" spellcheck="false">
+        <button type="submit">Ajouter</button>
+      </form>
+      <div class="dialog-actions"><button type="button" data-close>Fermer</button></div>
+    </div>
   </div>
 
   <div id="palette" class="overlay hidden">
