@@ -112,6 +112,7 @@ async function openTerminal({ name, cwd, command, color, presetId, accountId = s
   tab.wrap.innerHTML = `<div class="term-head"><span class="dot" style="background:${tab.color}"></span><span>${esc(tab.title)}</span><span>${esc(shortPath(cwd))}</span><span class="cstate"></span></div><div class="term-body"></div>`;
   tab.wrap.querySelector('.term-head').onclick = () => activate(tab.key);
   makeDraggable(tab.wrap.querySelector('.term-head'), tab, 'pane');
+  tab.wrap.querySelector('.term-head').ondblclick = () => startRename(tab);
   $('#terms').appendChild(tab.wrap);
 
   tab.term = new Terminal({
@@ -214,7 +215,7 @@ function activate(key) {
 }
 
 const activeTab = () => state.tabs.find((t) => t.key === state.activeKey && inSpace(t));
-const focusTab = (t) => (t?.kind === 'chat' ? $('#prompt').focus() : t?.term.focus());
+const focusTab = (t) => (renamingKey ? null : t?.kind === 'chat' ? $('#prompt').focus() : t?.term.focus());
 const focusActive = () => focusTab(activeTab());
 
 api.onData((id, data) => {
@@ -294,7 +295,48 @@ function playDoneSound(tab) {
 
 /* ---------- Rendu ---------- */
 
+// Renommer un onglet : double-clic sur l'onglet ou sur l'en-tête du terminal, Entrée pour valider, Échap pour annuler
+let renamingKey = null;
+function startRename(t) {
+  if (!t) return;
+  const el = [...$('#tabs').children][spaceTabs().indexOf(t)];
+  const titleEl = el?.querySelector('.title');
+  if (!titleEl) return;
+  renamingKey = t.key;
+  el.draggable = false;
+  const input = document.createElement('input');
+  input.className = 'tab-rename';
+  input.value = t.title;
+  input.spellcheck = false;
+  input.size = Math.max(6, t.title.length + 1);
+  titleEl.replaceWith(input);
+  input.focus();
+  input.select();
+  // Le clic qui précède le double-clic a pu programmer un focus du terminal : on reprend la main
+  setTimeout(() => { if (renamingKey === t.key) { input.focus(); input.select(); } }, 30);
+  const done = (save) => {
+    if (renamingKey !== t.key) return;
+    renamingKey = null;
+    if (save) {
+      t.title = input.value.trim() || t.baseName;
+      const head = t.wrap.querySelector('.term-head span:nth-child(2)');
+      if (head) head.textContent = t.title;
+    }
+    renderTabs();
+    if (t.key === state.activeKey) focusTab(t);
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); done(true); }
+    if (e.key === 'Escape') { e.preventDefault(); done(false); }
+  });
+  input.addEventListener('input', () => { input.size = Math.max(6, input.value.length + 1); });
+  input.addEventListener('blur', () => done(true));
+  ['mousedown', 'click', 'dblclick'].forEach((ev) => input.addEventListener(ev, (e) => e.stopPropagation()));
+}
+
 function renderTabs() {
+  if (renamingKey) return; // ne pas écraser le champ en cours d'édition
   const el = $('#tabs');
   el.innerHTML = '';
   spaceTabs().forEach((t, i) => {
@@ -306,6 +348,8 @@ function renderTabs() {
     // Au mousedown : les onglets sont souvent redessinés, un auxclick n'arrive pas toujours au même élément
     d.onmousedown = (e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.key); } };
     makeDraggable(d, t, 'tab');
+    d.ondblclick = (e) => { if (!e.target.closest('.close')) startRename(t); };
+    d.querySelector('.title').title = 'Double-clic pour renommer';
     d.querySelector('.close').onclick = (e) => { e.stopPropagation(); closeTab(t.key); };
     el.appendChild(d);
   });
@@ -1588,6 +1632,7 @@ function renderPalette() {
     ...spacePresets().map((p) => ({ kind: 'Lancer', label: p.name, sub: shortPath(p.cwd), color: p.color, run: () => launchPreset(p) })),
     ...spaceTabs().map((t) => ({ kind: 'Onglet', label: t.title, sub: shortPath(t.cwd), color: t.color, run: () => activate(t.key) })),
     ...skillItems,
+    ...(activeTab() ? [{ kind: 'Action', label: 'Renommer l’onglet…', sub: activeTab().title, color: 'transparent', run: () => setTimeout(() => startRename(activeTab()), 50) }] : []),
     { kind: 'Action', label: 'Nouveau preset…', sub: '', color: 'transparent', run: () => openPresetModal() },
     { kind: 'Action', label: 'Comptes Claude…', sub: 'pro, perso…', color: 'transparent', run: () => openAccounts() },
     ...allAccounts().filter((a) => a.id !== state.account).map((a) => ({ kind: 'Compte', label: `Passer sur ${a.name}`, sub: a.dir || '~/.claude', color: 'var(--accent)', run: () => switchSpace(a.id) })),

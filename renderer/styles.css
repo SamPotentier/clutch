@@ -771,3 +771,6 @@ body.dragging-term .xterm { pointer-events: none; }
 #preset-list .count.working .ic { animation: spin .9s linear infinite; }
 #preset-list .count.waiting { color: var(--warn); animation: cstate-pulse 1.6s ease-in-out infinite; }
 #preset-list .count .ic { width: 14px; height: 14px; }
+
+/* Renommage d'un onglet */
+.tab-rename { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 4px; padding: 0 4px; margin: -1px 0; min-width: 0; outline: none; }

@@ -98,6 +98,7 @@ async function openChat({ name, cwd, color, presetId, accountId = state.account,
   tab.scroller = tab.wrap.querySelector('.chat-scroll');
   tab.wrap.querySelector('.term-head').onclick = () => activate(tab.key);
   makeDraggable(tab.wrap.querySelector('.term-head'), tab, 'pane');
+  tab.wrap.querySelector('.term-head').ondblclick = () => startRename(tab);
   tab.wrap.querySelector('.chat-mode').value = tab.mode;
   tab.wrap.querySelector('.chat-mode').onchange = (e) => changeMode(tab, e.target.value);
   tab.wrap.querySelector('.chat-stop').onclick = () => interruptChat(tab);
@@ -177,9 +178,14 @@ function interruptChat(tab) {
 
 function continueInTerminal(tab) {
   if (!tab.sessionId) return addNotice(tab, 'Envoie d’abord un message : la session n’existe pas encore.');
-  const { baseName, cwd, color, presetId, sessionId, extraArgs, accountId, group } = tab;
+  const { baseName, title, cwd, color, presetId, sessionId, extraArgs, accountId, group } = tab;
   closeTab(tab.key);
-  openTerminal({ name: baseName, cwd, color, presetId, accountId, group, command: `claude ${extraArgs ? extraArgs + ' ' : ''}--resume ${sessionId}` });
+  return openTerminal({ name: baseName, cwd, color, presetId, accountId, group, command: `claude ${extraArgs ? extraArgs + ' ' : ''}--resume ${sessionId}` }).then((t) => {
+    // Garde le nom de l'onglet (éventuellement renommé)
+    t.title = title;
+    t.wrap.querySelector('.term-head span:nth-child(2)').textContent = title;
+    renderTabs();
+  });
 }
 
 /* Événements du processus */
