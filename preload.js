@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   saveData: (data) => ipcRenderer.invoke('data:save', data),
   pickFolder: () => ipcRenderer.invoke('dialog:folder'),
   subdirs: (dir) => ipcRenderer.invoke('fs:subdirs', dir),
+  usage: (configDir) => ipcRenderer.invoke('usage:get', configDir),
   bgPick: () => ipcRenderer.invoke('bg:pick'),
   bgRead: (file) => ipcRenderer.invoke('bg:read', file),
   scanSkills: (projectDirs, configDir) => ipcRenderer.invoke('skills:scan', projectDirs, configDir),

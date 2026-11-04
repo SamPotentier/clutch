@@ -446,6 +446,7 @@ function switchSpace(id) {
   renderTabs();
   applyLayout();
   scanSkills();
+  refreshUsage();
   if (back) activate(back.key);
   else refreshDiff();
 }
@@ -1361,6 +1362,70 @@ window.addEventListener('keydown', (e) => {
   if (handled) { e.preventDefault(); e.stopPropagation(); }
 }, true);
 
+/* ---------- Utilisation de Claude (forfait) ---------- */
+
+const usage = { byAccount: {}, at: {}, loading: false, open: false };
+const MOIS = { Jan: 'janv.', Feb: 'févr.', Mar: 'mars', Apr: 'avr.', May: 'mai', Jun: 'juin', Jul: 'juil.', Aug: 'août', Sep: 'sept.', Oct: 'oct.', Nov: 'nov.', Dec: 'déc.' };
+const usageLabel = (it) => (it.kind === 'session' ? 'Session' : it.scope && it.scope !== 'all models' ? `Semaine · ${it.scope}` : 'Semaine');
+const usageLevel = (p) => (p >= 90 ? ' crit' : p >= 70 ? ' warn' : '');
+
+// « Nov 4 at 7:20pm » → « 4 nov. à 19h20 »
+function frResets(t) {
+  const m = t.match(/^(?:(\w{3}) (\d+)(?: at )?)?\s*(\d+)(?::(\d+))?\s*(am|pm)?$/i);
+  if (!m) return t;
+  let h = +m[3] % 12 + (/pm/i.test(m[5] || '') ? 12 : 0);
+  if (!m[5]) h = +m[3];
+  const time = `${h}h${m[4] || '00'}`;
+  return m[1] ? `${m[2]} ${MOIS[m[1]] || m[1]} à ${time}` : `à ${time}`;
+}
+
+async function refreshUsage(force = false) {
+  const id = state.account;
+  if (usage.loading) return;
+  if (!force && Date.now() - (usage.at[id] || 0) < 60000) return renderUsage();
+  usage.loading = true;
+  renderUsage();
+  const res = await api.usage(accountFor(id).dir);
+  usage.loading = false;
+  usage.byAccount[id] = res;
+  usage.at[id] = Date.now();
+  renderUsage();
+}
+
+function renderUsage() {
+  const el = $('#usage');
+  const u = usage.byAccount[state.account];
+  const items = u?.items || [];
+  el.classList.toggle('hidden', !items.length);
+  if (!items.length) return;
+  const compact = items.filter((it) => it.kind === 'session' || !it.scope || it.scope === 'all models');
+  const bar = (it) => `<span class="u-bar"><i style="width:${Math.min(100, it.pct)}%"></i></span>`;
+  const ago = Math.round((Date.now() - usage.at[state.account]) / 60000);
+  el.innerHTML = compact.map((it) => `<div class="u-item${usageLevel(it.pct)}"><span>${usageLabel(it)}</span>${bar(it)}<span class="u-pct">${it.pct}%</span></div>`).join('')
+    + (usage.open ? `<div id="usage-pop" class="popover">
+        <b>Utilisation de Claude · ${esc(accountFor(state.account).name)}</b>
+        ${items.map((it) => `<div class="u-row u-item${usageLevel(it.pct)}">
+          <div class="u-line"><span>${usageLabel(it)}</span><span class="u-pct">${it.pct}%</span></div>
+          ${bar(it)}
+          ${it.resets ? `<small>Réinitialisation ${esc(frResets(it.resets))}</small>` : ''}
+        </div>`).join('')}
+        <div class="u-foot"><span>${usage.loading ? 'Mise à jour…' : `Mis à jour ${ago < 1 ? 'à l’instant' : `il y a ${ago} min`}`}</span>
+          <button id="usage-refresh" title="Rafraîchir">${icon('refresh')}</button></div>
+      </div>` : '');
+}
+
+$('#usage').addEventListener('click', (e) => {
+  if (e.target.closest('#usage-refresh')) return refreshUsage(true);
+  if (e.target.closest('#usage-pop')) return;
+  usage.open = !usage.open;
+  renderUsage();
+});
+document.addEventListener('click', (e) => {
+  if (usage.open && !e.composedPath().includes($('#usage'))) { usage.open = false; renderUsage(); }
+});
+window.addEventListener('focus', () => refreshUsage());
+setInterval(() => refreshUsage(true), 5 * 60000);
+
 /* ---------- Init ---------- */
 
 (async () => {
@@ -1385,4 +1450,5 @@ window.addEventListener('keydown', (e) => {
   renderTabs();
   applyLayout();
   window.addEventListener('resize', () => state.tabs.forEach(fitTab));
+  refreshUsage(true);
 })();

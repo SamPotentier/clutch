@@ -243,6 +243,23 @@ function getLoginPath() {
   });
 }
 
+// Utilisation du forfait : la commande /usage de Claude Code, sans appel au modèle (gratuite)
+function claudeUsage(configDir) {
+  return getLoginPath().then((PATH) => new Promise((resolve) => {
+    execFile('claude', ['-p', '/usage', '--output-format', 'json', '--no-session-persistence'], {
+      cwd: os.tmpdir(), timeout: 30000, env: { ...process.env, PATH, ...claudeEnv(configDir) },
+    }, (err, stdout) => {
+      let text = '';
+      try { text = JSON.parse(stdout).result || ''; } catch { return resolve({ error: err ? err.message : 'Réponse illisible' }); }
+      const items = [];
+      for (const m of text.matchAll(/^Current (session|week)(?: \(([^)]+)\))?: (\d+)% used(?: · resets (.+))?$/gm)) {
+        items.push({ kind: m[1], scope: m[2] || '', pct: +m[3], resets: (m[4] || '').replace(/\s*\([^)]*\)\s*$/, '') });
+      }
+      resolve({ subscription: /subscription/i.test(text), items, text: text.split('\n\n')[0] });
+    });
+  }));
+}
+
 // Petit découpage façon shell pour les options du preset (ex. « claude --model opus »)
 const splitArgs = (str) => (str.match(/"[^"]*"|'[^']*'|\S+/g) || []).map((a) => a.replace(/^(["'])(.*)\1$/, '$2'));
 
@@ -426,6 +443,7 @@ ipcMain.handle('bg:read', (_e, file) => {
     return null;
   }
 });
+ipcMain.handle('usage:get', (_e, configDir) => claudeUsage(configDir));
 ipcMain.handle('fs:subdirs', (_e, dir) => {
   try {
     dir = expandHome(dir);

@@ -286,6 +286,7 @@ function onLocalCommandOutput(tab, content) {
 function onResult(tab, ev) {
   clearTimeout(tab.interruptTimer);
   setBusy(tab, false);
+  refreshUsage();
   if (tab.lastSent === '/clear') {
     tab.log.innerHTML = '';
     tab.tools.clear();
