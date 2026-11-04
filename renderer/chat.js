@@ -97,6 +97,7 @@ async function openChat({ name, cwd, color, presetId, accountId = state.account,
   tab.log = tab.wrap.querySelector('.chat-log');
   tab.scroller = tab.wrap.querySelector('.chat-scroll');
   tab.wrap.querySelector('.term-head').onclick = () => activate(tab.key);
+  makeDraggable(tab.wrap.querySelector('.term-head'), tab, 'pane');
   tab.wrap.querySelector('.chat-mode').value = tab.mode;
   tab.wrap.querySelector('.chat-mode').onchange = (e) => changeMode(tab, e.target.value);
   tab.wrap.querySelector('.chat-stop').onclick = () => interruptChat(tab);

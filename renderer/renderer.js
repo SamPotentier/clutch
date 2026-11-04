@@ -110,6 +110,7 @@ async function openTerminal({ name, cwd, command, color, presetId, accountId = s
   tab.wrap.className = 'term-wrap';
   tab.wrap.innerHTML = `<div class="term-head"><span class="dot" style="background:${tab.color}"></span><span>${esc(tab.title)}</span><span>${esc(shortPath(cwd))}</span></div><div class="term-body"></div>`;
   tab.wrap.querySelector('.term-head').onclick = () => activate(tab.key);
+  makeDraggable(tab.wrap.querySelector('.term-head'), tab, 'pane');
   $('#terms').appendChild(tab.wrap);
 
   tab.term = new Terminal({
@@ -238,6 +239,7 @@ function renderTabs() {
     d.onclick = () => activate(t.key);
     // Au mousedown : les onglets sont souvent redessinés, un auxclick n'arrive pas toujours au même élément
     d.onmousedown = (e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.key); } };
+    makeDraggable(d, t, 'tab');
     d.querySelector('.close').onclick = (e) => { e.stopPropagation(); closeTab(t.key); };
     el.appendChild(d);
   });
@@ -272,40 +274,236 @@ function renderPresets() {
   if (!spacePresets().length) el.innerHTML = '<li style="cursor:default;color:var(--muted)">Aucun preset. Clique sur + pour en créer un, ou importe un dossier de projets.</li>';
 }
 
-// Terminaux lancés ensemble par un projet (même groupe), encore ouverts dans l'espace
-const groupTabs = (g) => (g ? spaceTabs().filter((t) => t.group === g) : []);
+// Groupe = terminaux affichés ensemble (lancés par un projet, ou réunis à la main / par glisser-déposer).
+// g = { id, layout, split, order: [clés], cols: [fr], rows: [fr] } ; layout 'tabs' = groupe replié en onglets
+const groupTabs = (g) => {
+  if (!g) return [];
+  const tabs = spaceTabs().filter((t) => t.group === g);
+  const pos = (t) => { const i = (g.order || []).indexOf(t.key); return i < 0 ? 1e9 + state.tabs.indexOf(t) : i; };
+  return tabs.sort((a, b) => pos(a) - pos(b));
+};
 const splitGroup = () => { const g = activeTab()?.group; return groupTabs(g).length > 1 && g.split !== 'tabs' ? g : null; };
+const newGroup = (layout, tabs) => {
+  const g = { id: uid(), layout, split: layout, order: tabs.map((t) => t.key) };
+  tabs.forEach((t) => leaveGroup(t, g));
+  return g;
+};
+// Retire un terminal de son groupe (et le met dans `into` si fourni) ; un groupe réduit à un terminal disparaît
+function leaveGroup(t, into = null) {
+  const old = t.group;
+  t.group = into;
+  if (old && old !== into) {
+    old.order = (old.order || []).filter((k) => k !== t.key);
+    old.cols = old.rows = null;
+    const rest = state.tabs.filter((x) => x.group === old);
+    if (rest.length === 1) rest[0].group = null;
+  }
+}
 
-// Le groupe de l'onglet actif impose sa disposition ; sinon, grille globale ou onglets
+let layoutInfo = { mode: 'tabs', shown: [], cols: 0, rows: 0, g: null };
+
+// Le groupe de l'onglet actif impose sa disposition ; sinon un seul terminal à la fois
 function applyLayout() {
   const g = splitGroup();
-  let shown = [];
-  let mode = 'tabs';
-  if (g && g.layout !== 'tabs') { shown = groupTabs(g); mode = g.layout; }
-  else if (!g && state.layout === 'grid' && spaceTabs().length > 1) { shown = spaceTabs(); mode = 'grid'; }
+  const shown = g && g.layout !== 'tabs' ? groupTabs(g) : [];
+  const mode = shown.length > 1 ? g.layout : 'tabs';
   const terms = $('#terms');
   terms.classList.toggle('grid', mode !== 'tabs');
   for (const t of state.tabs) {
     t.wrap.classList.toggle('shown', shown.includes(t));
-    t.wrap.style.gridRow = t.wrap.style.gridColumn = '';
+    t.wrap.style.gridRow = t.wrap.style.gridColumn = t.wrap.style.order = '';
   }
+  let cols = 0;
+  let rows = 0;
   if (mode !== 'tabs') {
     const n = shown.length;
+    shown.forEach((t, i) => { t.wrap.style.order = i; });
     // main-left : le premier terminal prend la moitié gauche, les autres s'empilent à droite
     // main-top : le premier prend le haut, les autres se partagent le bas
-    let cols = mode === 'cols' ? n : mode === 'rows' ? 1 : Math.ceil(Math.sqrt(n));
-    let rows = Math.ceil(n / cols);
+    cols = mode === 'cols' ? n : mode === 'rows' ? 1 : Math.ceil(Math.sqrt(n));
+    rows = Math.ceil(n / cols);
     if (mode === 'main-left') { cols = 2; rows = n - 1; shown[0].wrap.style.gridRow = `1 / span ${rows}`; }
     if (mode === 'main-top') { cols = n - 1; rows = 2; shown[0].wrap.style.gridColumn = `1 / span ${cols}`; }
-    terms.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
-    terms.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+    if (g.cols?.length !== cols) g.cols = Array(cols).fill(1);
+    if (g.rows?.length !== rows) g.rows = Array(rows).fill(1);
+    terms.style.gridTemplateColumns = g.cols.map((f) => `minmax(0, ${f}fr)`).join(' ');
+    terms.style.gridTemplateRows = g.rows.map((f) => `minmax(0, ${f}fr)`).join(' ');
   } else {
     terms.style.gridTemplateColumns = terms.style.gridTemplateRows = '';
   }
+  layoutInfo = { mode, shown, cols, rows, g };
+  const grouped = !!activeTab()?.group && groupTabs(activeTab().group).length > 1;
   $('#btn-layout').innerHTML = icon(mode !== 'tabs' ? 'tabs' : 'grid');
-  $('#btn-layout').title = g ? (mode !== 'tabs' ? 'Afficher en onglets' : 'Revenir à la disposition du projet') : 'Grille / onglets (⌘G)';
-  requestAnimationFrame(() => state.tabs.forEach(fitTab));
+  $('#btn-layout').title = mode !== 'tabs' ? 'Afficher en onglets (⌘G)' : grouped ? 'Revenir à la disposition du groupe (⌘G)' : 'Afficher tous les terminaux en grille (⌘G)';
+  requestAnimationFrame(() => { renderSplitHandles(); state.tabs.forEach(fitTab); });
 }
+
+/* ---------- Redimensionnement des terminaux ---------- */
+
+// Poignées posées sur les séparations de la grille ; la taille des pistes est lue dans le style calculé
+function renderSplitHandles() {
+  const terms = $('#terms');
+  terms.querySelectorAll('.split-handle').forEach((h) => h.remove());
+  const { mode, cols, rows, g } = layoutInfo;
+  if (mode === 'tabs') return;
+  const cs = getComputedStyle(terms);
+  const colPx = cs.gridTemplateColumns.split(' ').map(parseFloat);
+  const rowPx = cs.gridTemplateRows.split(' ').map(parseFloat);
+  const gap = parseFloat(cs.columnGap) || 0;
+  const padL = parseFloat(cs.paddingLeft);
+  const padT = parseFloat(cs.paddingTop);
+  const start = (px, i, pad) => pad + px.slice(0, i).reduce((a, b) => a + b, 0) + i * gap;
+  const add = (axis, i, style) => {
+    const h = document.createElement('div');
+    h.className = `split-handle ${axis}`;
+    Object.assign(h.style, style);
+    h.addEventListener('pointerdown', (e) => startSplitDrag(e, g, axis, i, axis === 'col' ? colPx : rowPx));
+    terms.appendChild(h);
+  };
+  const fullH = { top: `${padT}px`, height: `${rowPx.reduce((a, b) => a + b, 0) + (rows - 1) * gap}px` };
+  const fullW = { left: `${padL}px`, width: `${colPx.reduce((a, b) => a + b, 0) + (cols - 1) * gap}px` };
+  for (let i = 1; i < cols; i++) {
+    const v = mode === 'main-top' ? { top: `${start(rowPx, 1, padT)}px`, height: `${rowPx[1]}px` } : fullH;
+    add('col', i, { left: `${start(colPx, i, padL) - gap / 2 - 4}px`, ...v });
+  }
+  for (let i = 1; i < rows; i++) {
+    const h = mode === 'main-left' ? { left: `${start(colPx, 1, padL)}px`, width: `${colPx[1]}px` } : fullW;
+    add('row', i, { top: `${start(rowPx, i, padT) - gap / 2 - 4}px`, ...h });
+  }
+}
+
+function startSplitDrag(e, g, axis, i, px) {
+  e.preventDefault();
+  const sizes = [...px];
+  const pair = sizes[i - 1] + sizes[i];
+  const min = axis === 'col' ? 160 : 90;
+  const origin = axis === 'col' ? e.clientX : e.clientY;
+  document.body.classList.add('resizing', axis === 'col' ? 'resizing-col' : 'resizing-row');
+  let raf = 0;
+  const move = (ev) => {
+    const d = (axis === 'col' ? ev.clientX : ev.clientY) - origin;
+    const a = Math.max(min, Math.min(pair - min, px[i - 1] + d));
+    sizes[i - 1] = a;
+    sizes[i] = pair - a;
+    g[axis === 'col' ? 'cols' : 'rows'] = [...sizes];
+    $('#terms').style[axis === 'col' ? 'gridTemplateColumns' : 'gridTemplateRows'] = sizes.map((f) => `minmax(0, ${f}fr)`).join(' ');
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => { renderSplitHandles(); layoutInfo.shown.forEach(fitTab); });
+  };
+  const up = () => {
+    document.body.classList.remove('resizing', 'resizing-col', 'resizing-row');
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    applyLayout();
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
+new ResizeObserver(() => requestAnimationFrame(renderSplitHandles)).observe($('#terms'));
+// Double-clic sur une poignée : tailles égales
+$('#terms').addEventListener('dblclick', (e) => {
+  if (!e.target.classList.contains('split-handle') || !layoutInfo.g) return;
+  layoutInfo.g.cols = layoutInfo.g.rows = null;
+  applyLayout();
+});
+
+/* ---------- Glisser-déposer des terminaux ---------- */
+
+// Un terminal se saisit par son en-tête (en grille) ou par son onglet.
+// Déposé sur un autre terminal : ils échangent leur place, ou le terminal rejoint la grille.
+// Déposé dans la barre d'onglets : il sort de la grille (et se range avant l'onglet visé).
+let dragKey = null;
+let dragFrom = '';
+const dragTab = () => state.tabs.find((t) => t.key === dragKey);
+
+function makeDraggable(el, tab, from) {
+  el.draggable = true;
+  el.addEventListener('dragstart', (e) => {
+    dragKey = tab.key;
+    dragFrom = from;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', tab.title);
+    document.body.classList.add('dragging-term');
+  });
+  el.addEventListener('dragend', () => {
+    dragKey = null;
+    document.body.classList.remove('dragging-term');
+    document.querySelectorAll('.drop-target, .drop-before').forEach((x) => x.classList.remove('drop-target', 'drop-before'));
+  });
+}
+
+const paneAt = (e) => state.tabs.find((t) => t.wrap === e.target.closest?.('.term-wrap'));
+
+$('#terms').addEventListener('dragover', (e) => {
+  if (!dragKey) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const t = paneAt(e);
+  document.querySelectorAll('.term-wrap.drop-target').forEach((x) => x !== t?.wrap && x.classList.remove('drop-target'));
+  if (t && t.key !== dragKey) t.wrap.classList.add('drop-target');
+}, true);
+$('#terms').addEventListener('drop', (e) => {
+  const src = dragTab();
+  if (!src) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const tgt = paneAt(e) || activeTab();
+  if (!tgt || tgt === src) return;
+  const g = layoutInfo.mode !== 'tabs' && layoutInfo.shown.includes(tgt) ? layoutInfo.g : null;
+  if (g) {
+    const keys = groupTabs(g).map((t) => t.key);
+    if (src.group === g) {
+      // Échange de places dans la grille
+      const a = keys.indexOf(src.key);
+      const b = keys.indexOf(tgt.key);
+      [keys[a], keys[b]] = [keys[b], keys[a]];
+    } else {
+      leaveGroup(src, g);
+      keys.splice(keys.indexOf(tgt.key), 0, src.key);
+      g.cols = g.rows = null;
+    }
+    g.order = keys;
+  } else if (tgt.group && groupTabs(tgt.group).length > 1) {
+    // Groupe replié en onglets : on y ajoute le terminal et on le redéploie
+    const tg = tgt.group;
+    leaveGroup(src, tg);
+    tg.order = [...groupTabs(tg).map((t) => t.key).filter((k) => k !== src.key), src.key];
+    if (tg.split === 'tabs') tg.split = 'cols';
+    tg.layout = tg.split;
+    tg.cols = tg.rows = null;
+  } else {
+    // Deux terminaux seuls : on crée une grille côte à côte
+    newGroup('cols', [tgt, src]);
+  }
+  activate(src.key);
+});
+
+$('#tabbar').addEventListener('dragover', (e) => {
+  if (!dragKey) return;
+  e.preventDefault();
+  const tabEl = e.target.closest('.tab');
+  document.querySelectorAll('.tab.drop-before').forEach((x) => x !== tabEl && x.classList.remove('drop-before'));
+  if (tabEl) tabEl.classList.add('drop-before');
+  $('#tabs').classList.add('drop-target');
+});
+$('#tabbar').addEventListener('dragleave', (e) => {
+  if (!$('#tabbar').contains(e.relatedTarget)) $('#tabs').classList.remove('drop-target');
+});
+$('#tabbar').addEventListener('drop', (e) => {
+  const src = dragTab();
+  if (!src) return;
+  e.preventDefault();
+  $('#tabs').classList.remove('drop-target');
+  // Un terminal saisi par son en-tête sort de la grille ; un onglet déplacé est seulement réordonné
+  if (dragFrom === 'pane' && src.group) leaveGroup(src);
+  const tabEl = e.target.closest('.tab');
+  const before = tabEl && spaceTabs()[[...$('#tabs').children].indexOf(tabEl)];
+  if (before && before !== src) {
+    state.tabs.splice(state.tabs.indexOf(src), 1);
+    state.tabs.splice(state.tabs.indexOf(before), 0, src);
+  }
+  activate(src.key);
+});
 
 /* ---------- Presets ---------- */
 
@@ -612,9 +810,16 @@ $('#btn-import').onclick = async () => {
 $('#btn-free').onclick = () => openTerminal({ name: 'shell', cwd: '~', command: '' });
 $('#preset-filter').oninput = renderPresets;
 $('#btn-layout').onclick = () => {
-  const g = splitGroup();
-  if (g) g.layout = g.layout === 'tabs' ? g.split : 'tabs';
-  else { state.layout = state.layout === 'grid' ? 'tabs' : 'grid'; persist(); }
+  const t = activeTab();
+  if (!t) return;
+  const g = t.group && groupTabs(t.group).length > 1 ? t.group : null;
+  if (g) {
+    if (g.split === 'tabs') g.split = 'grid';
+    g.layout = g.layout === 'tabs' ? g.split : 'tabs';
+  } else {
+    // Réunit en grille tous les terminaux de l'espace
+    if (spaceTabs().length > 1) newGroup('grid', spaceTabs());
+  }
   applyLayout();
 };
 
@@ -1432,7 +1637,7 @@ setInterval(() => refreshUsage(true), 5 * 60000);
   const data = await api.loadData();
   state.presets = data.presets || [];
   state.prompts = data.prompts || [];
-  state.layout = data.layout || 'tabs';
+  state.layout = 'tabs';
   state.skillConfigs = data.skillConfigs || {};
   state.chatMode = data.chatMode || 'acceptEdits';
   state.accounts = data.accounts || [];

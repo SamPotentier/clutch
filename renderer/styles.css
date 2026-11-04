@@ -730,3 +730,24 @@ body[data-theme="systeme"] .xterm .xterm-scrollable-element > .scrollbar.vertica
 #usage-pop .u-line { display: flex; justify-content: space-between; }
 #usage-pop small { color: var(--muted); }
 #usage-pop .u-foot { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 11px; }
+
+/* Poignées de redimensionnement entre terminaux */
+.split-handle { position: absolute; z-index: 5; }
+.split-handle.col { width: 8px; cursor: col-resize; }
+.split-handle.row { height: 8px; cursor: row-resize; }
+.split-handle::after { content: ""; position: absolute; border-radius: 2px; background: var(--accent); opacity: 0; transition: opacity .12s; }
+.split-handle.col::after { left: 3px; width: 2px; top: 0; bottom: 0; }
+.split-handle.row::after { top: 3px; height: 2px; left: 0; right: 0; }
+.split-handle:hover::after, body.resizing .split-handle::after { opacity: .7; }
+body.resizing-col, body.resizing-col * { cursor: col-resize !important; }
+body.resizing-row, body.resizing-row * { cursor: row-resize !important; }
+body.resizing .term-wrap { pointer-events: none; }
+
+/* Glisser-déposer des terminaux */
+#terms.grid .term-head { cursor: grab; }
+#terms.grid .term-head:active { cursor: grabbing; }
+body.dragging-term .xterm { pointer-events: none; }
+.term-wrap.drop-target { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.term-wrap.drop-target::before { content: "Déposer ici"; position: absolute; inset: 0; z-index: 6; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); font-weight: 600; pointer-events: none; }
+#tabs.drop-target { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: var(--r); }
+.tab.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
