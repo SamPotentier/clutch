@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>Clutch</title>
+  <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="drag-zone"></div>
+      <div class="side-tabs">
+        <button data-view="projects" class="on">Projets</button>
+        <button data-view="skills">Skills</button>
+      </div>
+      <section id="view-projects" class="side-view">
+        <div class="side-head">
+          <span>Projets</span>
+          <div class="side-actions">
+            <button id="btn-import" title="Importer les sous-dossiers d'un dossier">⇩</button>
+            <button id="btn-add" title="Nouveau preset">＋</button>
+          </div>
+        </div>
+        <input id="preset-filter" placeholder="Filtrer…" spellcheck="false">
+        <ul id="preset-list" class="side-list"></ul>
+      </section>
+      <section id="view-skills" class="side-view hidden">
+        <div class="side-head">
+          <span>Skills</span>
+          <div class="side-actions">
+            <button id="btn-skills-rescan" title="Rescanner les skills">↻</button>
+            <button id="btn-skill-add" title="Nouveau skill personnalisé">＋</button>
+          </div>
+        </div>
+        <input id="skill-filter" placeholder="Filtrer…" spellcheck="false">
+        <ul id="skill-list" class="side-list"></ul>
+      </section>
+      <div class="side-foot">
+        <button id="btn-free" title="Cmd+T">Terminal libre</button>
+        <div class="hint">⌘K lancer · ⌘J skill · ⌘T nouveau · ⌘W fermer · ⌘L prompt · ⌘1-9 onglets</div>
+      </div>
+    </aside>
+
+    <main id="main">
+      <div id="tabbar">
+        <div id="tabs"></div>
+        <div class="tab-actions">
+          <button id="btn-diff" title="Afficher les modifications (⌘D)">±</button>
+          <button id="btn-layout" title="Basculer onglets / grille">▦</button>
+          <button id="btn-theme" title="Thème">◐</button>
+          <div id="theme-pop" class="popover hidden"></div>
+        </div>
+      </div>
+      <div id="workspace">
+      <div id="left">
+      <div id="terms">
+        <div id="empty">
+          <h2>Aucun terminal ouvert</h2>
+          <p>Clique sur un projet à gauche, ou <kbd>⌘K</kbd> pour en lancer un.</p>
+        </div>
+      </div>
+      <div id="promptbar">
+        <textarea id="prompt" rows="2" placeholder="Prompt à envoyer au terminal… (⌘↵ pour envoyer)" spellcheck="false"></textarea>
+        <div class="prompt-side">
+          <select id="prompt-target">
+            <option value="active">Terminal actif</option>
+            <option value="all">Tous les terminaux</option>
+          </select>
+          <div class="prompt-buttons">
+            <button id="btn-snippets" title="Prompts enregistrés">☰</button>
+            <button id="btn-save-snippet" title="Enregistrer ce prompt">★</button>
+            <button id="btn-send" class="primary">Envoyer</button>
+          </div>
+        </div>
+        <div id="snippets" class="popover hidden"></div>
+        <div id="slash-pop" class="popover hidden"></div>
+      </div>
+      </div>
+      <div id="diff-resizer" class="hidden"></div>
+      <aside id="diff-panel" class="hidden">
+        <div class="diff-head">
+          <div class="diff-title"><span id="diff-project"></span><span id="diff-stats"></span></div>
+          <div class="diff-tools">
+            <select id="diff-scope" title="Base de comparaison">
+              <option value="session">Depuis l'ouverture de l'onglet</option>
+              <option value="head">Tout le non-commité (HEAD)</option>
+            </select>
+            <label class="check" title="Ouvrir automatiquement quand des fichiers changent"><input type="checkbox" id="diff-auto"> auto</label>
+            <button id="diff-collapse" title="Tout replier / déplier">⇕</button>
+            <button id="diff-refresh" title="Rafraîchir">↻</button>
+            <button id="diff-close" title="Fermer (⌘D)">×</button>
+          </div>
+        </div>
+        <div id="diff-files"></div>
+        <div id="diff-body"></div>
+      </aside>
+      </div>
+    </main>
+  </div>
+
+  <div id="modal" class="overlay hidden">
+    <form id="preset-form" class="dialog">
+      <h3 id="modal-title">Nouveau preset</h3>
+      <label>Nom<input name="name" required spellcheck="false"></label>
+      <label>Dossier
+        <div class="row">
+          <input name="cwd" required spellcheck="false" placeholder="~/Documents/projects/mon-projet">
+          <button type="button" id="btn-browse">Parcourir…</button>
+        </div>
+      </label>
+      <label>Commande au lancement <small>(vide = simple shell)</small>
+        <input name="command" spellcheck="false" placeholder="claude">
+      </label>
+      <label>Couleur<div id="color-picker" class="colors"></div></label>
+      <div class="dialog-actions">
+        <button type="button" id="btn-cancel">Annuler</button>
+        <button type="submit" class="primary">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="skill-run" class="overlay hidden">
+    <form id="skill-run-form" class="dialog wide">
+      <h3 id="skill-run-title"></h3>
+      <div id="skill-run-desc" class="desc"></div>
+      <label>Projet<select name="preset" id="skill-run-preset"></select></label>
+      <div id="skill-run-fields"></div>
+      <label>Lancer dans<select name="target" id="skill-run-target"></select></label>
+      <label>Aperçu<pre id="skill-run-preview" class="preview"></pre></label>
+      <div class="dialog-actions">
+        <button type="button" id="btn-skill-run-edit" class="left">Modifier le modèle…</button>
+        <button type="button" data-close>Annuler</button>
+        <button type="submit" class="primary">Lancer ⌘↵</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="skill-edit" class="overlay hidden">
+    <form id="skill-edit-form" class="dialog wide">
+      <h3 id="skill-edit-title"></h3>
+      <label>Nom<input name="name" required spellcheck="false"></label>
+      <label>Description<input name="description" spellcheck="false"></label>
+      <label>Modèle de prompt
+        <textarea name="template" rows="6" spellcheck="false" class="mono" required></textarea>
+      </label>
+      <div class="syntax">
+        <code>{{ticket}}</code> champ texte · <code>{{note?}}</code> facultatif · <code>{{contexte:long}}</code> zone de texte ·
+        <code>{{env:dev|staging|prod}}</code> liste · <code>{{project}}</code> <code>{{cwd}}</code> <code>{{date}}</code> remplis automatiquement
+      </div>
+      <div id="skill-edit-fields" class="desc"></div>
+      <div class="dialog-actions">
+        <button type="button" id="btn-skill-reset" class="left danger"></button>
+        <button type="button" data-close>Annuler</button>
+        <button type="submit" class="primary">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="palette" class="overlay hidden">
+    <div class="dialog palette">
+      <input id="palette-input" placeholder="Lancer un projet ou aller à un onglet…" spellcheck="false">
+      <ul id="palette-list"></ul>
+    </div>
+  </div>
+
+  <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
+  <script src="renderer.js"></script>
+  <script src="chat.js"></script>
+</body>
+</html>

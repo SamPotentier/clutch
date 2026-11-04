@@ -1,0 +1,999 @@
+const $ = (s) => document.querySelector(s);
+const uid = () => Math.random().toString(36).slice(2, 10);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const shortPath = (p) => (p || '').replace(/^\/Users\/[^/]+/, '~');
+
+const COLORS = ['#7aa2f7', '#9ece6a', '#e0af68', '#f7768e', '#bb9af7', '#7dcfff', '#ff9e64', '#c0caf5'];
+const THEME = {
+  background: '#16161e', foreground: '#c0caf5', cursor: '#c0caf5', selectionBackground: '#33467c',
+  black: '#15161e', red: '#f7768e', green: '#9ece6a', yellow: '#e0af68', blue: '#7aa2f7', magenta: '#bb9af7', cyan: '#7dcfff', white: '#a9b1d6',
+  brightBlack: '#414868', brightRed: '#f7768e', brightGreen: '#9ece6a', brightYellow: '#e0af68', brightBlue: '#7aa2f7', brightMagenta: '#bb9af7', brightCyan: '#7dcfff', brightWhite: '#c0caf5',
+};
+
+const NERD_MONO = '"MesloLGS NF", "JetBrainsMono Nerd Font", "Hack Nerd Font", "SF Mono", Menlo, monospace';
+const THEMES = {
+  nuit: {
+    label: 'Nuit', desc: 'Sombre et sobre, le thème d’origine', swatches: ['#16161e', '#24283b', '#7aa2f7', '#9ece6a'],
+    winBg: '#16161e', fontSize: 13, lineHeight: 1.15, cursor: 'block', placeholder: 'Prompt à envoyer au terminal… (⌘↵ pour envoyer)',
+    xterm: THEME,
+  },
+  glass: {
+    label: 'Glass', desc: 'Verre dépoli sur fond coloré', swatches: ['#7c5cff', '#00c2ff', '#ff54a0', 'rgba(255,255,255,.5)'],
+    winBg: '#0b0b1a', fontSize: 13, lineHeight: 1.2, cursor: 'bar', placeholder: 'Prompt à envoyer au terminal… (⌘↵ pour envoyer)',
+    xterm: {
+      ...THEME, background: 'rgba(0,0,0,0)', foreground: '#f4f4ff', cursor: '#ffffff', selectionBackground: 'rgba(255,255,255,.22)',
+      blue: '#a5b4ff', brightBlue: '#c3cdff', magenta: '#ff9ad5', cyan: '#7fe3ff', green: '#7ef0b0', red: '#ff8fb1', yellow: '#ffd479', brightBlack: '#8a8fb8',
+    },
+  },
+  papier: {
+    label: 'Papier', desc: 'Clair et doux, loin de l’ambiance terminal', swatches: ['#f4f1ea', '#fffefb', '#c96442', '#2d2a24'],
+    winBg: '#f4f1ea', fontSize: 14, lineHeight: 1.45, cursor: 'bar', placeholder: 'Écris ton message à Claude… (⌘↵ pour envoyer)',
+    xterm: {
+      background: '#fffefb', foreground: '#2d2a24', cursor: '#c96442', cursorAccent: '#fffefb', selectionBackground: '#f1d9cc',
+      black: '#2d2a24', red: '#b4432f', green: '#3f7a2a', yellow: '#9a6a12', blue: '#2b6cb0', magenta: '#9b4f96', cyan: '#2a7f86', white: '#8a8374',
+      brightBlack: '#8a8374', brightRed: '#c96442', brightGreen: '#4f8f36', brightYellow: '#b7791f', brightBlue: '#3b7dc4', brightMagenta: '#b05fab', brightCyan: '#35939b', brightWhite: '#5c574d',
+    },
+  },
+  retro: {
+    label: 'Rétro', desc: 'Arcade pixel, assorti au logo', swatches: ['#070707', '#e8795a', '#f5c542', '#b6e35a'],
+    winBg: '#070707', fontSize: 13, lineHeight: 1.2, cursor: 'block', placeholder: '> PROMPT… (⌘↵ POUR ENVOYER)',
+    xterm: {
+      background: '#070707', foreground: '#f3e6da', cursor: '#e8795a', cursorAccent: '#070707', selectionBackground: '#4a2a1f',
+      black: '#070707', red: '#ff5c5c', green: '#b6e35a', yellow: '#f5c542', blue: '#e8795a', magenta: '#ff8fa3', cyan: '#5ad1e3', white: '#d8c8bb',
+      brightBlack: '#6b5a4f', brightRed: '#ff7b7b', brightGreen: '#c9f075', brightYellow: '#ffd865', brightBlue: '#f39477', brightMagenta: '#ffa8b8', brightCyan: '#7fe0ee', brightWhite: '#fff4ea',
+    },
+  },
+};
+THEMES.conversation = {
+  ...THEMES.papier, label: 'Conversation', desc: 'Claude comme une discussion : bulles, texte lisible, actions résumées',
+  swatches: ['#faf9f5', '#ffffff', '#d97757', '#3d3929'], winBg: '#faf9f5', chat: true,
+  placeholder: 'Écris à Claude…  (Entrée pour envoyer, ⇧Entrée pour aller à la ligne)',
+};
+const currentTheme = () => THEMES[state.theme] || THEMES.nuit;
+// Barre de défilement discrète, lisible sur fond clair comme sombre
+const SCROLLBAR = { scrollbarSliderBackground: 'rgba(127,127,127,.22)', scrollbarSliderHoverBackground: 'rgba(127,127,127,.38)', scrollbarSliderActiveBackground: 'rgba(127,127,127,.5)', overviewRulerBorder: 'rgba(0,0,0,0)' };
+const termOptions = (th) => ({ theme: { ...SCROLLBAR, ...th.xterm }, fontSize: th.fontSize, lineHeight: th.lineHeight, cursorStyle: th.cursor, fontFamily: NERD_MONO });
+
+const state = { theme: 'nuit', presets: [], prompts: [], layout: 'tabs', tabs: [], activeKey: null, skills: [], skillConfigs: {}, customSkills: [],
+  diff: { open: false, scope: 'session', auto: true, width: 560, collapsed: new Set() } };
+const byPty = new Map(); // ptyId -> tab
+
+function persist() {
+  api.saveData({
+    theme: state.theme, chatMode: state.chatMode, presets: state.presets, prompts: state.prompts, layout: state.layout,
+    skillConfigs: state.skillConfigs, customSkills: state.customSkills,
+    diff: { scope: state.diff.scope, auto: state.diff.auto, width: state.diff.width },
+  });
+}
+
+/* ---------- Terminaux ---------- */
+
+async function openTerminal({ name, cwd, command, color, presetId }) {
+  const sameName = state.tabs.filter((t) => t.baseName === name).length;
+  const tab = {
+    key: uid(), presetId, baseName: name, title: sameName ? `${name} (${sameName + 1})` : name,
+    cwd, command, color: color || '#737aa2', ptyId: null, exited: false,
+  };
+
+  tab.wrap = document.createElement('div');
+  tab.wrap.className = 'term-wrap';
+  tab.wrap.innerHTML = `<div class="term-head"><span class="dot" style="background:${tab.color}"></span><span>${esc(tab.title)}</span><span>${esc(shortPath(cwd))}</span></div><div class="term-body"></div>`;
+  tab.wrap.querySelector('.term-head').onclick = () => activate(tab.key);
+  $('#terms').appendChild(tab.wrap);
+
+  tab.term = new Terminal({
+    ...termOptions(currentTheme()),
+    cursorBlink: true, allowProposedApi: true, scrollback: 10000, macOptionIsMeta: true,
+  });
+  tab.fit = new FitAddon.FitAddon();
+  tab.term.loadAddon(tab.fit);
+  tab.term.loadAddon(new WebLinksAddon.WebLinksAddon((_e, url) => window.open(url)));
+  tab.term.open(tab.wrap.querySelector('.term-body'));
+
+  tab.term.onData((data) => {
+    if (tab.exited) {
+      if (data === '\r') restart(tab);
+      return;
+    }
+    api.write(tab.ptyId, data);
+  });
+  tab.term.onResize(({ cols, rows }) => tab.ptyId && api.resize(tab.ptyId, cols, rows));
+  tab.term.onBell(() => { if (tab.key !== state.activeKey) { tab.bell = true; renderTabs(); } });
+  tab.term.textarea.addEventListener('focus', () => state.activeKey !== tab.key && activate(tab.key));
+
+  new ResizeObserver(() => fitTab(tab)).observe(tab.wrap);
+
+  state.tabs.push(tab);
+  applyLayout();
+  activate(tab.key);
+  fitTab(tab);
+  api.gitTrack(cwd).then((g) => {
+    tab.git = g;
+    if (tab.key === state.activeKey) refreshDiff();
+  });
+  await spawn(tab);
+  return tab;
+}
+
+async function spawn(tab) {
+  tab.exited = false;
+  tab.ptyId = await api.createPty({ cwd: tab.cwd, command: tab.command, cols: tab.term.cols, rows: tab.term.rows });
+  byPty.set(tab.ptyId, tab);
+  renderTabs();
+  renderPresets();
+}
+
+function restart(tab) {
+  tab.term.reset();
+  spawn(tab);
+}
+
+function fitTab(tab) {
+  if (!tab.fit) return;
+  if (!tab.wrap.offsetWidth || !tab.wrap.offsetHeight) return;
+  try { tab.fit.fit(); } catch {}
+}
+
+function closeTab(key) {
+  const i = state.tabs.findIndex((t) => t.key === key);
+  if (i < 0) return;
+  const tab = state.tabs[i];
+  if (tab.kind === 'chat') stopChatProcess(tab);
+  else if (tab.ptyId && !tab.exited) api.kill(tab.ptyId);
+  byPty.delete(tab.ptyId);
+  tab.git?.repos.forEach((r) => api.gitUntrack(r.root));
+  tab.term?.dispose();
+  tab.wrap.remove();
+  state.tabs.splice(i, 1);
+  if (state.activeKey === key) {
+    const next = state.tabs[i] || state.tabs[i - 1];
+    state.activeKey = null;
+    if (next) activate(next.key);
+  }
+  renderTabs();
+  renderPresets();
+  applyLayout();
+  refreshDiff();
+}
+
+function activate(key) {
+  const tab = state.tabs.find((t) => t.key === key);
+  if (!tab) return;
+  state.activeKey = key;
+  tab.activity = false;
+  tab.bell = false;
+  for (const t of state.tabs) {
+    t.wrap.classList.toggle('visible', t.key === key);
+    t.wrap.classList.toggle('active', t.key === key);
+  }
+  renderTabs();
+  refreshDiff();
+  requestAnimationFrame(() => { fitTab(tab); focusTab(tab); });
+}
+
+const activeTab = () => state.tabs.find((t) => t.key === state.activeKey);
+const focusTab = (t) => (t?.kind === 'chat' ? $('#prompt').focus() : t?.term.focus());
+const focusActive = () => focusTab(activeTab());
+
+api.onData((id, data) => {
+  const tab = byPty.get(id);
+  if (!tab) return;
+  tab.term.write(data);
+  if (tab.key !== state.activeKey && !tab.activity) { tab.activity = true; renderTabs(); }
+});
+
+api.onExit((id, code) => {
+  const tab = byPty.get(id);
+  if (!tab) return;
+  byPty.delete(id);
+  tab.exited = true;
+  tab.term.write(`\r\n\x1b[2m[processus terminé (code ${code}) — Entrée pour relancer, ⌘W pour fermer]\x1b[0m\r\n`);
+  renderTabs();
+});
+
+/* ---------- Rendu ---------- */
+
+function renderTabs() {
+  const el = $('#tabs');
+  el.innerHTML = '';
+  state.tabs.forEach((t, i) => {
+    const d = document.createElement('div');
+    d.className = 'tab' + (t.key === state.activeKey ? ' active' : '') + (t.exited && t.kind !== 'chat' ? ' exited' : '') + (t.bell ? ' bell' : t.activity ? ' activity' : '');
+    d.title = `${shortPath(t.cwd)}${t.command ? ' — ' + t.command : ''}${i < 9 ? `  (⌘${i + 1})` : ''}`;
+    d.innerHTML = `<span class="dot" style="background:${t.color}"></span><span class="title">${esc(t.title)}</span><span class="badge"></span><button class="close" title="Fermer (⌘W)">×</button>`;
+    d.onclick = () => activate(t.key);
+    d.onauxclick = (e) => e.button === 1 && closeTab(t.key);
+    d.querySelector('.close').onclick = (e) => { e.stopPropagation(); closeTab(t.key); };
+    el.appendChild(d);
+  });
+  $('#empty').classList.toggle('hidden', state.tabs.length > 0);
+}
+
+function renderPresets() {
+  const q = $('#preset-filter').value.trim().toLowerCase();
+  const el = $('#preset-list');
+  el.innerHTML = '';
+  for (const p of state.presets) {
+    if (q && !`${p.name} ${p.cwd}`.toLowerCase().includes(q)) continue;
+    const n = state.tabs.filter((t) => t.presetId === p.id && !t.exited).length;
+    const li = document.createElement('li');
+    li.title = `${p.cwd}${p.command ? '\n$ ' + p.command : ''}`;
+    li.innerHTML = `<span class="dot" style="background:${p.color}"></span>
+      <div class="info"><div class="name">${esc(p.name)}</div><div class="path">${esc(shortPath(p.cwd))}${p.command ? ' · ' + esc(p.command) : ''}</div></div>
+      ${n ? `<span class="count">${n}</span>` : ''}
+      <div class="tools"><button data-a="skill" title="Lancer un skill sur ce projet (⌘J)">⚡</button><button data-a="edit" title="Modifier">✎</button><button data-a="del" title="Supprimer">🗑</button></div>`;
+    li.onclick = (e) => {
+      const a = e.target.dataset?.a;
+      if (a === 'skill') return openPalette({ mode: 'skills', presetId: p.id });
+      if (a === 'edit') return openPresetModal(p);
+      if (a === 'del') return deletePreset(p);
+      launchPreset(p);
+    };
+    el.appendChild(li);
+  }
+  if (!state.presets.length) el.innerHTML = '<li style="cursor:default;color:var(--muted)">Aucun preset. Clique sur ＋ ou ⇩ pour importer un dossier de projets.</li>';
+}
+
+function applyLayout() {
+  const grid = state.layout === 'grid' && state.tabs.length > 1;
+  const terms = $('#terms');
+  terms.classList.toggle('grid', grid);
+  if (grid) {
+    const n = state.tabs.length;
+    const cols = Math.ceil(Math.sqrt(n));
+    terms.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+    terms.style.gridTemplateRows = `repeat(${Math.ceil(n / cols)}, minmax(0, 1fr))`;
+  } else {
+    terms.style.gridTemplateColumns = terms.style.gridTemplateRows = '';
+  }
+  $('#btn-layout').textContent = state.layout === 'grid' ? '▭' : '▦';
+  requestAnimationFrame(() => state.tabs.forEach(fitTab));
+}
+
+/* ---------- Presets ---------- */
+
+const isClaudeCmd = (c) => /^claude\b/.test(c || '');
+
+// Ouvre une session sur un projet : vue conversation (thème Conversation) ou terminal
+function openSession(p, { prompt = '', title } = {}) {
+  const name = title || p.name;
+  const claude = isClaudeCmd(p.command);
+  if (currentTheme().chat && (claude || prompt)) {
+    return openChat({ name, cwd: p.cwd, color: p.color, presetId: p.id, extraArgs: claude ? p.command.replace(/^claude\s*/, '') : '', prompt });
+  }
+  const command = prompt ? `${claude ? p.command : 'claude'} ${shq(prompt)}` : p.command;
+  return openTerminal({ name, cwd: p.cwd, command, color: p.color, presetId: p.id });
+}
+
+const launchPreset = (p) => openSession(p);
+
+function deletePreset(p) {
+  if (!confirm(`Supprimer le preset « ${p.name} » ?`)) return;
+  state.presets = state.presets.filter((x) => x.id !== p.id);
+  persist();
+  renderPresets();
+}
+
+let editing = null;
+let pickedColor = COLORS[0];
+
+function openPresetModal(p) {
+  editing = p || null;
+  const f = $('#preset-form');
+  $('#modal-title').textContent = p ? 'Modifier le preset' : 'Nouveau preset';
+  f.name.value = p?.name || '';
+  f.cwd.value = p?.cwd || '';
+  f.command.value = p ? p.command || '' : 'claude';
+  pickedColor = p?.color || COLORS[state.presets.length % COLORS.length];
+  renderColors();
+  $('#modal').classList.remove('hidden');
+  f.name.focus();
+}
+
+function renderColors() {
+  const el = $('#color-picker');
+  el.innerHTML = '';
+  for (const c of COLORS) {
+    const s = document.createElement('span');
+    s.className = 'swatch' + (c === pickedColor ? ' selected' : '');
+    s.style.background = c;
+    s.onclick = () => { pickedColor = c; renderColors(); };
+    el.appendChild(s);
+  }
+}
+
+const closeModal = () => { $('#modal').classList.add('hidden'); focusActive(); };
+
+$('#preset-form').onsubmit = (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const data = { name: f.name.value.trim(), cwd: f.cwd.value.trim(), command: f.command.value.trim(), color: pickedColor };
+  if (editing) Object.assign(editing, data);
+  else state.presets.push({ id: uid(), ...data });
+  state.presets.sort((a, b) => a.name.localeCompare(b.name));
+  persist();
+  renderPresets();
+  closeModal();
+  scanSkills();
+};
+$('#btn-cancel').onclick = closeModal;
+$('#btn-browse').onclick = async () => {
+  const dir = await api.pickFolder();
+  if (!dir) return;
+  const f = $('#preset-form');
+  f.cwd.value = dir;
+  if (!f.name.value) f.name.value = dir.split('/').pop();
+};
+$('#btn-add').onclick = () => openPresetModal();
+$('#btn-import').onclick = async () => {
+  const dir = await api.pickFolder();
+  if (!dir) return;
+  const known = new Set(state.presets.map((p) => p.cwd));
+  const dirs = (await api.subdirs(dir)).filter((d) => !known.has(d.path));
+  dirs.forEach((d, i) => state.presets.push({ id: uid(), name: d.name, cwd: d.path, command: 'claude', color: COLORS[(state.presets.length + i) % COLORS.length] }));
+  state.presets.sort((a, b) => a.name.localeCompare(b.name));
+  persist();
+  renderPresets();
+  scanSkills();
+};
+$('#btn-free').onclick = () => openTerminal({ name: 'shell', cwd: '~', command: '' });
+$('#preset-filter').oninput = renderPresets;
+$('#btn-layout').onclick = () => { state.layout = state.layout === 'grid' ? 'tabs' : 'grid'; persist(); applyLayout(); };
+
+/* ---------- Skills ---------- */
+
+// Syntaxe des modèles : {{cle}}, {{cle?}} facultatif, {{cle:long}} zone de texte, {{cle:a|b|c}} liste.
+const PH = /\{\{\s*([\w-]+)(\?)?(?::([^}]*))?\s*\}\}/g;
+const BUILTINS = ['project', 'cwd', 'date'];
+const SOURCE_GROUPS = [['fav', 'Favoris'], ['custom', 'Mes modèles'], ['projet', 'Skills de projet'], ['perso', 'Skills perso'], ['plugin', 'Plugins'], ['claude.ai', 'claude.ai']];
+const shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+const humanize = (k) => (k.charAt(0).toUpperCase() + k.slice(1)).replace(/[_-]/g, ' ');
+const defaultTemplate = (s) => `/${s.invoke} {{arguments?}}`;
+const presetFor = (cwd) => state.presets.find((p) => p.cwd === cwd);
+
+function parseFields(tpl) {
+  const fields = new Map();
+  for (const [, key, opt, type] of tpl.matchAll(PH)) {
+    if (BUILTINS.includes(key) || fields.has(key)) continue;
+    fields.set(key, {
+      key, optional: !!opt,
+      type: !type ? 'text' : type.trim() === 'long' ? 'long' : 'select',
+      options: type && type.trim() !== 'long' ? type.split('|').map((o) => o.trim()) : [],
+    });
+  }
+  return [...fields.values()];
+}
+
+function fillTemplate(tpl, values) {
+  return tpl.replace(PH, (_, key) => values[key] ?? '').replace(/[ \t]+$/gm, '').trim();
+}
+
+function allSkills() {
+  const custom = state.customSkills.map((c) => ({ ...c, key: 'custom:' + c.id, invoke: c.name, source: 'custom', custom: true }));
+  return [...custom, ...state.skills].map((s) => ({
+    ...s,
+    template: state.skillConfigs[s.key]?.template || s.template || defaultTemplate(s),
+    fav: !!state.skillConfigs[s.key]?.fav,
+  }));
+}
+
+function toggleFav(skill) {
+  const cfg = { ...state.skillConfigs[skill.key] };
+  if (cfg.fav) delete cfg.fav;
+  else cfg.fav = true;
+  state.skillConfigs[skill.key] = cfg;
+  persist();
+  renderSkills();
+}
+
+async function scanSkills() {
+  state.skills = await api.scanSkills(state.presets.map((p) => p.cwd));
+  renderSkills();
+}
+
+function renderSkills() {
+  const q = $('#skill-filter').value.trim().toLowerCase();
+  const el = $('#skill-list');
+  el.innerHTML = '';
+  const skills = allSkills().filter((s) => !q || fuzzy(q, s.invoke) || s.description.toLowerCase().includes(q));
+  for (const [source, label] of SOURCE_GROUPS) {
+    // Un favori n'apparaît que dans le groupe Favoris
+    const group = skills.filter((s) => (source === 'fav' ? s.fav : !s.fav && s.source === source));
+    if (!group.length) continue;
+    el.insertAdjacentHTML('beforeend', `<li class="group">${label}</li>`);
+    for (const s of group) {
+      const li = document.createElement('li');
+      li.title = s.description;
+      const project = s.project ? presetFor(s.project)?.name : '';
+      if (s.fav) li.className = 'fav';
+      li.innerHTML = `<span class="skill-icon">⚡</span>
+        <div class="info"><div class="name">${esc(s.name)}</div><div class="path">${esc(s.description || s.template)}</div></div>
+        ${project ? `<span class="tag">${esc(project)}</span>` : ''}
+        <div class="tools"><button data-a="edit" title="Modifier le modèle">✎</button></div>
+        <button class="star" data-a="fav" title="${s.fav ? 'Retirer des favoris' : 'Ajouter aux favoris'}">${s.fav ? '★' : '☆'}</button>`;
+      li.onclick = (e) => {
+        const a = e.target.dataset?.a;
+        if (a === 'fav') return toggleFav(s);
+        if (a === 'edit') return openSkillEdit(s);
+        openSkillRun(s, activeTab()?.presetId);
+      };
+      el.appendChild(li);
+    }
+  }
+  if (!skills.length) el.innerHTML = '<li style="cursor:default;color:var(--muted)">Aucun skill trouvé.</li>';
+}
+
+function showSideView(view) {
+  document.querySelectorAll('.side-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.view === view));
+  $('#view-projects').classList.toggle('hidden', view !== 'projects');
+  $('#view-skills').classList.toggle('hidden', view !== 'skills');
+}
+
+function closeOverlay(el) {
+  el.classList.add('hidden');
+  focusActive();
+}
+
+/* Lancement d'un skill */
+
+let running = null;
+
+function openSkillRun(skill, presetId) {
+  const presets = skill.project ? state.presets.filter((p) => p.cwd === skill.project) : state.presets;
+  if (!presets.length) return openPresetModal();
+  running = skill;
+  const last = state.skillConfigs[skill.key]?.last;
+  const sel = $('#skill-run-preset');
+  sel.innerHTML = presets.map((p) => `<option value="${p.id}">${esc(p.name)} — ${esc(shortPath(p.cwd))}</option>`).join('');
+  sel.value = (presets.find((p) => p.id === presetId) || presets.find((p) => p.id === last?.presetId) || presets[0]).id;
+  $('#skill-run-title').textContent = skill.name;
+  $('#skill-run-desc').textContent = skill.description || skill.invoke;
+
+  const fieldsEl = $('#skill-run-fields');
+  fieldsEl.innerHTML = '';
+  for (const f of parseFields(skill.template)) {
+    const label = document.createElement('label');
+    label.innerHTML = `<span>${esc(humanize(f.key))}${f.optional ? ' <small>(facultatif)</small>' : ''}</span>`;
+    let input;
+    if (f.type === 'select') {
+      input = document.createElement('select');
+      input.innerHTML = f.options.map((o) => `<option>${esc(o)}</option>`).join('');
+      if (f.options.includes(last?.values?.[f.key])) input.value = last.values[f.key];
+    } else if (f.type === 'long') {
+      input = document.createElement('textarea');
+      input.rows = 4;
+    } else {
+      input = document.createElement('input');
+    }
+    input.dataset.key = f.key;
+    input.required = !f.optional;
+    input.spellcheck = false;
+    if (f.key === 'arguments' && skill.argumentHint) input.placeholder = skill.argumentHint;
+    label.appendChild(input);
+    fieldsEl.appendChild(label);
+  }
+
+  renderRunTargets();
+  updateRunPreview();
+  $('#skill-run').classList.remove('hidden');
+  (fieldsEl.querySelector('[data-key]') || $('#skill-run-form button[type=submit]')).focus();
+}
+
+function renderRunTargets() {
+  const pid = $('#skill-run-preset').value;
+  const tabs = state.tabs.filter((t) => t.presetId === pid && !t.exited);
+  $('#skill-run-target').innerHTML = '<option value="new">Nouveau terminal Claude</option>'
+    + tabs.map((t) => `<option value="${t.key}">Session ouverte : ${esc(t.title)}</option>`).join('');
+}
+
+function runValues() {
+  const p = state.presets.find((x) => x.id === $('#skill-run-preset').value);
+  const values = { project: p?.name || '', cwd: p?.cwd || '', date: new Date().toISOString().slice(0, 10) };
+  for (const i of $('#skill-run-fields').querySelectorAll('[data-key]')) values[i.dataset.key] = i.value.trim();
+  return { p, values };
+}
+
+function updateRunPreview() {
+  $('#skill-run-preview').textContent = fillTemplate(running.template, runValues().values);
+}
+
+$('#skill-run-form').addEventListener('input', updateRunPreview);
+$('#skill-run-preset').addEventListener('change', () => { renderRunTargets(); updateRunPreview(); });
+$('#skill-run-form').onsubmit = (e) => {
+  e.preventDefault();
+  const { p, values } = runValues();
+  if (!p) return;
+  const prompt = fillTemplate(running.template, values);
+  state.skillConfigs[running.key] = { ...state.skillConfigs[running.key], last: { presetId: p.id, values } };
+  persist();
+  closeOverlay($('#skill-run'));
+  const tab = state.tabs.find((t) => t.key === $('#skill-run-target').value);
+  if (tab) {
+    activate(tab.key);
+    sendToTab(tab, prompt);
+  } else {
+    openSession(p, { prompt, title: `${p.name} · ${running.name}` });
+  }
+};
+$('#btn-skill-run-edit').onclick = () => {
+  $('#skill-run').classList.add('hidden');
+  openSkillEdit(running, $('#skill-run-preset').value);
+};
+
+/* Édition des modèles */
+
+let editingSkill = null;
+let editReturnPreset = null;
+
+function openSkillEdit(skill, returnPreset = null) {
+  editingSkill = skill || null;
+  editReturnPreset = returnPreset;
+  const f = $('#skill-edit-form');
+  const isCustom = !skill || skill.custom;
+  $('#skill-edit-title').textContent = skill ? `Modèle : ${skill.name}` : 'Nouveau skill personnalisé';
+  f.name.value = skill?.name || '';
+  f.description.value = skill?.description || '';
+  f.name.readOnly = f.description.readOnly = !isCustom;
+  f.template.value = skill?.template || '';
+  f.template.placeholder = '/ticket {{ticket}}\n\nContexte : {{contexte?:long}}';
+  const reset = $('#btn-skill-reset');
+  reset.textContent = skill?.custom ? 'Supprimer' : 'Réinitialiser';
+  reset.classList.toggle('hidden', !skill || (!skill.custom && !state.skillConfigs[skill.key]?.template));
+  renderEditFields();
+  $('#skill-edit').classList.remove('hidden');
+  (isCustom && !skill ? f.name : f.template).focus();
+}
+
+function renderEditFields() {
+  const fields = parseFields($('#skill-edit-form').template.value);
+  $('#skill-edit-fields').textContent = fields.length
+    ? 'Champs demandés au lancement : ' + fields.map((f) => humanize(f.key) + (f.optional ? ' (facultatif)' : '')).join(', ')
+    : 'Aucun champ : le prompt est envoyé tel quel.';
+}
+
+function afterSkillEdit(key) {
+  persist();
+  renderSkills();
+  closeOverlay($('#skill-edit'));
+  const skill = key && allSkills().find((s) => s.key === key);
+  if (skill && editReturnPreset) openSkillRun(skill, editReturnPreset);
+}
+
+$('#skill-edit-form').template.addEventListener('input', renderEditFields);
+$('#skill-edit-form').onsubmit = (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const data = { name: f.name.value.trim(), description: f.description.value.trim(), template: f.template.value.trim() };
+  let key = editingSkill?.key;
+  if (!editingSkill) {
+    const id = uid();
+    state.customSkills.push({ id, ...data });
+    key = 'custom:' + id;
+  } else if (editingSkill.custom) {
+    Object.assign(state.customSkills.find((c) => 'custom:' + c.id === key), data);
+  } else {
+    const cfg = { ...state.skillConfigs[key], template: data.template };
+    if (data.template === defaultTemplate(editingSkill)) delete cfg.template;
+    state.skillConfigs[key] = cfg;
+  }
+  afterSkillEdit(key);
+};
+$('#btn-skill-reset').onclick = () => {
+  const key = editingSkill.key;
+  if (editingSkill.custom) {
+    if (!confirm(`Supprimer le skill « ${editingSkill.name} » ?`)) return;
+    state.customSkills = state.customSkills.filter((c) => 'custom:' + c.id !== key);
+    delete state.skillConfigs[key];
+    editReturnPreset = null;
+  } else {
+    delete state.skillConfigs[key]?.template;
+  }
+  afterSkillEdit(key);
+};
+
+document.querySelectorAll('.side-tabs button').forEach((b) => { b.onclick = () => showSideView(b.dataset.view); });
+document.querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => closeOverlay(b.closest('.overlay')); });
+for (const id of ['#skill-run', '#skill-edit']) {
+  $(id).addEventListener('mousedown', (e) => { if (e.target === $(id)) closeOverlay($(id)); });
+}
+$('#skill-filter').oninput = renderSkills;
+$('#btn-skills-rescan').onclick = scanSkills;
+$('#btn-skill-add').onclick = () => openSkillEdit();
+
+/* ---------- Panneau de diff ---------- */
+
+function parseDiff(patch) {
+  const files = [];
+  let f = null;
+  let oldN = 0;
+  let newN = 0;
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('diff --git ')) {
+      f = { path: (line.match(/ b\/(.*)$/) || [])[1] || line, status: 'M', hunks: [], add: 0, del: 0, binary: false };
+      files.push(f);
+    } else if (!f) {
+      continue;
+    } else if (line.startsWith('@@')) {
+      const m = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)/);
+      oldN = +(m?.[1] || 0);
+      newN = +(m?.[2] || 0);
+      f.hunks.push({ header: line, lines: [] });
+    } else if (f.hunks.length) {
+      const lines = f.hunks[f.hunks.length - 1].lines;
+      const c = line[0];
+      if (c === '+') { lines.push({ t: 'add', n2: newN++, s: line.slice(1) }); f.add++; }
+      else if (c === '-') { lines.push({ t: 'del', n1: oldN++, s: line.slice(1) }); f.del++; }
+      else if (c === ' ') lines.push({ t: 'ctx', n1: oldN++, n2: newN++, s: line.slice(1) });
+    } else if (line.startsWith('new file')) f.status = 'A';
+    else if (line.startsWith('deleted file')) f.status = 'D';
+    else if (line.startsWith('rename from ')) { f.status = 'R'; f.from = line.slice(12); }
+    else if (line.startsWith('rename to ')) f.path = line.slice(10);
+    else if (line.startsWith('Binary files')) f.binary = true;
+  }
+  return files;
+}
+
+let diffSeq = 0;
+let diffTimer = null;
+
+// Regroupe les rafales de changements (activation d'onglet + notification du watcher)
+function refreshDiff() {
+  clearTimeout(diffTimer);
+  diffTimer = setTimeout(loadDiff, 50);
+}
+
+async function loadDiff() {
+  const t = activeTab();
+  const seq = ++diffSeq;
+  if (!t?.git) return renderDiff(t, null);
+  const patches = await api.gitDiff(t.git.repos, state.diff.scope === 'session');
+  if (seq !== diffSeq) return;
+  // Plusieurs dépôts (ex. front/ et back/) : chaque chemin est préfixé par son dépôt
+  const files = patches.flatMap(({ name, patch }) =>
+    parseDiff(patch).map((f) => ({ ...f, repo: name, path: name ? `${name}/${f.path}` : f.path })));
+  if (!files.length) t.diffDismissed = false;
+  else if (state.diff.auto && !t.diffDismissed && !state.diff.open) setDiffOpen(true);
+  renderDiff(t, files);
+}
+
+function setDiffOpen(open) {
+  state.diff.open = open;
+  $('#diff-panel').classList.toggle('hidden', !open);
+  $('#diff-resizer').classList.toggle('hidden', !open);
+  $('#diff-panel').style.width = state.diff.width + 'px';
+  $('#btn-diff').classList.toggle('on', open);
+  requestAnimationFrame(() => state.tabs.forEach(fitTab));
+}
+
+function toggleDiff() {
+  const t = activeTab();
+  if (state.diff.open) {
+    if (t) t.diffDismissed = true;
+    setDiffOpen(false);
+  } else {
+    if (t) t.diffDismissed = false;
+    setDiffOpen(true);
+    refreshDiff();
+  }
+}
+
+const ln = (n) => `<td class="ln">${n ?? ''}</td>`;
+
+function renderDiff(t, files) {
+  $('#diff-project').textContent = t ? t.title : '';
+  const body = $('#diff-body');
+  const list = $('#diff-files');
+  const scrollTop = body.scrollTop;
+  list.innerHTML = '';
+  let msg = '';
+  if (!t) msg = 'Aucun terminal ouvert.';
+  else if (!t.git) msg = 'Aucun dépôt git dans ce dossier ni dans ses sous-dossiers.';
+  else if (!files.length) msg = state.diff.scope === 'session' ? "Aucune modification depuis l'ouverture de l'onglet." : 'Aucune modification non commitée.';
+  if (msg) {
+    $('#diff-stats').textContent = '';
+    body.innerHTML = `<div class="diff-empty">${msg}</div>`;
+    return;
+  }
+
+  const add = files.reduce((n, f) => n + f.add, 0);
+  const del = files.reduce((n, f) => n + f.del, 0);
+  $('#diff-stats').innerHTML = `${files.length} fichier${files.length > 1 ? 's' : ''} <span class="add">+${add}</span> <span class="del">−${del}</span>`;
+
+  let html = '';
+  files.forEach((f, i) => {
+    const slash = f.path.lastIndexOf('/');
+    const name = `<span class="dir">${esc(f.path.slice(0, slash + 1))}</span>${esc(f.path.slice(slash + 1))}`;
+    const collapsed = state.diff.collapsed.has(f.path);
+    let rows = '';
+    let count = 0;
+    if (f.binary) rows = '<tr class="hunk"><td colspan="3">Fichier binaire</td></tr>';
+    for (const h of f.hunks) {
+      if (count > 2000) break;
+      rows += `<tr class="hunk"><td colspan="3">${esc(h.header)}</td></tr>`;
+      for (const l of h.lines) {
+        if (++count > 2000) { rows += '<tr class="hunk"><td colspan="3">… diff tronqué</td></tr>'; break; }
+        const sign = l.t === 'add' ? '+' : l.t === 'del' ? '-' : ' ';
+        rows += `<tr class="${l.t}">${ln(l.n1)}${ln(l.n2)}<td class="code"><span class="sign">${sign}</span>${esc(l.s)}</td></tr>`;
+      }
+    }
+    html += `<div class="dfile${collapsed ? ' collapsed' : ''}" id="dfile-${i}" data-path="${esc(f.path)}">
+      <div class="dfile-head"><span class="caret">▾</span><span class="st st-${f.status}">${f.status}</span>
+        <span class="dpath" title="${esc(f.from ? f.from + ' → ' + f.path : f.path)}">${name}</span>
+        <span class="dstat"><span class="add">+${f.add}</span> <span class="del">−${f.del}</span></span></div>
+      <table class="dt"><colgroup><col class="c-ln"><col class="c-ln"><col></colgroup>${rows}</table></div>`;
+    const chip = document.createElement('button');
+    chip.className = `chip st-${f.status}`;
+    chip.textContent = (f.repo ? f.repo + ' · ' : '') + f.path.slice(slash + 1);
+    chip.title = f.path;
+    chip.onclick = () => {
+      state.diff.collapsed.delete(f.path);
+      const el = $(`#dfile-${i}`);
+      el.classList.remove('collapsed');
+      el.scrollIntoView({ block: 'start' });
+    };
+    list.appendChild(chip);
+  });
+  body.innerHTML = html;
+  body.scrollTop = scrollTop;
+}
+
+$('#diff-body').addEventListener('click', (e) => {
+  const head = e.target.closest('.dfile-head');
+  if (!head) return;
+  const file = head.parentElement;
+  file.classList.toggle('collapsed');
+  if (file.classList.contains('collapsed')) state.diff.collapsed.add(file.dataset.path);
+  else state.diff.collapsed.delete(file.dataset.path);
+});
+$('#diff-collapse').onclick = () => {
+  const files = [...document.querySelectorAll('.dfile')];
+  const collapse = files.some((f) => !f.classList.contains('collapsed'));
+  for (const f of files) {
+    f.classList.toggle('collapsed', collapse);
+    if (collapse) state.diff.collapsed.add(f.dataset.path);
+    else state.diff.collapsed.delete(f.dataset.path);
+  }
+};
+$('#btn-diff').onclick = toggleDiff;
+$('#diff-close').onclick = toggleDiff;
+$('#diff-refresh').onclick = refreshDiff;
+$('#diff-scope').onchange = (e) => { state.diff.scope = e.target.value; persist(); refreshDiff(); };
+$('#diff-auto').onchange = (e) => { state.diff.auto = e.target.checked; persist(); };
+api.onGitChanged((root) => { if (activeTab()?.git?.repos.some((r) => r.root === root)) refreshDiff(); });
+
+$('#diff-resizer').addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  const right = $('#workspace').getBoundingClientRect().right;
+  const max = $('#workspace').offsetWidth - 320;
+  document.body.classList.add('resizing');
+  const move = (ev) => {
+    state.diff.width = Math.max(320, Math.min(max, right - ev.clientX));
+    $('#diff-panel').style.width = state.diff.width + 'px';
+  };
+  const up = () => {
+    document.body.classList.remove('resizing');
+    window.removeEventListener('mousemove', move);
+    window.removeEventListener('mouseup', up);
+    persist();
+    state.tabs.forEach(fitTab);
+  };
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+});
+
+/* ---------- Thèmes ---------- */
+
+function applyTheme(name) {
+  state.theme = THEMES[name] ? name : 'nuit';
+  const th = currentTheme();
+  document.body.dataset.theme = state.theme;
+  $('#prompt').placeholder = th.placeholder;
+  api.setWindowBg(th.winBg);
+  for (const t of state.tabs) if (t.term) Object.assign(t.term.options, termOptions(th));
+  requestAnimationFrame(() => state.tabs.forEach(fitTab));
+  renderThemePop();
+}
+
+function renderThemePop() {
+  $('#theme-pop').innerHTML = Object.entries(THEMES).map(([key, th]) => `
+    <div class="theme-card${key === state.theme ? ' on' : ''}" data-theme="${key}">
+      <div class="swatches">${th.swatches.map((c) => `<span style="background:${c}"></span>`).join('')}</div>
+      <div><b>${th.label}</b><small>${th.desc}</small></div>
+    </div>`).join('');
+}
+
+$('#theme-pop').addEventListener('click', (e) => {
+  const card = e.target.closest('.theme-card');
+  if (!card) return;
+  applyTheme(card.dataset.theme);
+  persist();
+});
+$('#btn-theme').onclick = (e) => { e.stopPropagation(); renderThemePop(); $('#theme-pop').classList.toggle('hidden'); };
+document.addEventListener('click', (e) => {
+  if (!$('#theme-pop').contains(e.target) && e.target.id !== 'btn-theme') $('#theme-pop').classList.add('hidden');
+});
+
+/* ---------- Barre de prompt ---------- */
+
+function sendPrompt() {
+  const ta = $('#prompt');
+  const text = ta.value.replace(/\s+$/, '');
+  if (!text) return;
+  // Une conversation en pause se reprend toute seule au prochain message
+  const alive = (t) => t && (!t.exited || t.kind === 'chat');
+  const targets = $('#prompt-target').value === 'all' ? state.tabs.filter(alive) : [activeTab()].filter(alive);
+  if (!targets.length) return;
+  targets.forEach((t) => sendToTab(t, text));
+  ta.value = '';
+  autoGrow();
+  focusActive();
+}
+
+function sendToTab(t, text) {
+  if (t.kind === 'chat') return chatSend(t, text);
+  // paste() gère le bracketed paste : un prompt multi-ligne arrive en un seul bloc dans Claude Code.
+  t.term.paste(text);
+  setTimeout(() => api.write(t.ptyId, '\r'), 120);
+}
+
+function autoGrow() {
+  const ta = $('#prompt');
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight + 2, 200) + 'px';
+}
+
+$('#prompt').addEventListener('input', autoGrow);
+$('#prompt').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || (currentTheme().chat && !e.shiftKey && !e.isComposing))) { e.preventDefault(); sendPrompt(); }
+  if (e.key === 'Escape') focusActive();
+});
+$('#btn-send').onclick = sendPrompt;
+
+$('#btn-save-snippet').onclick = () => {
+  const text = $('#prompt').value.trim();
+  if (!text) return;
+  state.prompts.unshift({ id: uid(), text });
+  persist();
+  renderSnippets();
+};
+$('#btn-snippets').onclick = (e) => { e.stopPropagation(); renderSnippets(); $('#snippets').classList.toggle('hidden'); };
+document.addEventListener('click', (e) => { if (!$('#snippets').contains(e.target)) $('#snippets').classList.add('hidden'); });
+
+function renderSnippets() {
+  const el = $('#snippets');
+  el.innerHTML = state.prompts.length ? '' : '<div class="empty">Aucun prompt enregistré. Écris un prompt puis clique sur ★.</div>';
+  for (const s of state.prompts) {
+    const d = document.createElement('div');
+    d.className = 'item';
+    d.title = s.text;
+    d.innerHTML = `<span>${esc(s.text.split('\n')[0])}</span><button title="Supprimer">×</button>`;
+    d.onclick = () => { $('#prompt').value = s.text; autoGrow(); el.classList.add('hidden'); $('#prompt').focus(); };
+    d.querySelector('button').onclick = (e) => {
+      e.stopPropagation();
+      state.prompts = state.prompts.filter((x) => x.id !== s.id);
+      persist();
+      renderSnippets();
+    };
+    el.appendChild(d);
+  }
+}
+
+/* ---------- Palette (⌘K) ---------- */
+
+let paletteItems = [];
+let paletteSel = 0;
+let paletteCtx = {};
+
+function openPalette(ctx = {}) {
+  paletteCtx = ctx;
+  paletteSel = 0;
+  $('#palette').classList.remove('hidden');
+  $('#palette-input').value = '';
+  const p = state.presets.find((x) => x.id === ctx.presetId);
+  $('#palette-input').placeholder = ctx.mode === 'skills'
+    ? `Lancer un skill${p ? ' sur ' + p.name : ''}…`
+    : 'Lancer un projet, un skill ou aller à un onglet…';
+  renderPalette();
+  $('#palette-input').focus();
+}
+const closePalette = () => { $('#palette').classList.add('hidden'); focusActive(); };
+
+function fuzzy(q, s) {
+  s = s.toLowerCase();
+  let i = 0;
+  for (const c of q) { i = s.indexOf(c, i); if (i < 0) return false; i++; }
+  return true;
+}
+
+function renderPalette() {
+  const q = $('#palette-input').value.trim().toLowerCase();
+  const skillItems = allSkills()
+    .filter((s) => !paletteCtx.presetId || !s.project || s.project === state.presets.find((p) => p.id === paletteCtx.presetId)?.cwd)
+    .sort((a, b) => b.fav - a.fav)
+    .map((s) => ({ kind: s.fav ? '★ Skill' : 'Skill', label: s.name, sub: s.invoke !== s.name ? s.invoke : s.source, color: 'var(--accent)', run: () => openSkillRun(s, paletteCtx.presetId) }));
+  paletteItems = (paletteCtx.mode === 'skills' ? skillItems : [
+    ...state.presets.map((p) => ({ kind: 'Lancer', label: p.name, sub: shortPath(p.cwd), color: p.color, run: () => launchPreset(p) })),
+    ...state.tabs.map((t) => ({ kind: 'Onglet', label: t.title, sub: shortPath(t.cwd), color: t.color, run: () => activate(t.key) })),
+    ...skillItems,
+    { kind: 'Action', label: 'Nouveau preset…', sub: '', color: 'transparent', run: () => openPresetModal() },
+    ...Object.entries(THEMES).map(([key, th]) => ({ kind: 'Thème', label: `Thème : ${th.label}`, sub: th.desc, color: th.swatches[2], run: () => { applyTheme(key); persist(); } })),
+  ]).filter((it) => !q || fuzzy(q, `${it.label} ${it.sub}`));
+  paletteSel = Math.min(paletteSel, Math.max(paletteItems.length - 1, 0));
+  const el = $('#palette-list');
+  el.innerHTML = '';
+  paletteItems.forEach((it, i) => {
+    const li = document.createElement('li');
+    if (i === paletteSel) li.className = 'sel';
+    li.innerHTML = `<span class="dot" style="background:${it.color}"></span><span>${esc(it.label)}</span><span class="path">${esc(it.sub)}</span><span class="kind">${it.kind}</span>`;
+    li.onclick = () => runPalette(i);
+    el.appendChild(li);
+  });
+}
+
+function runPalette(i) {
+  const it = paletteItems[i];
+  if (!it) return;
+  $('#palette').classList.add('hidden');
+  it.run();
+}
+
+$('#palette-input').addEventListener('input', () => { paletteSel = 0; renderPalette(); });
+$('#palette-input').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') { paletteSel = Math.min(paletteSel + 1, paletteItems.length - 1); renderPalette(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { paletteSel = Math.max(paletteSel - 1, 0); renderPalette(); e.preventDefault(); }
+  else if (e.key === 'Enter') { e.preventDefault(); runPalette(paletteSel); }
+});
+$('#palette').addEventListener('mousedown', (e) => { if (e.target.id === 'palette') closePalette(); });
+$('#modal').addEventListener('mousedown', (e) => { if (e.target.id === 'modal') closeModal(); });
+
+/* ---------- Raccourcis ---------- */
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (!$('#palette').classList.contains('hidden')) return closePalette();
+    if (!$('#modal').classList.contains('hidden')) return closeModal();
+    const open = document.querySelector('#skill-edit:not(.hidden), #skill-run:not(.hidden)');
+    if (open) return closeOverlay(open);
+  }
+  if (!e.metaKey || e.altKey || e.ctrlKey) return;
+  const k = e.key.toLowerCase();
+  let handled = true;
+  if (k === 'k' && !e.shiftKey) openPalette();
+  else if (k === 'j') openPalette({ mode: 'skills', presetId: activeTab()?.presetId });
+  else if (k === 'enter' && !$('#skill-run').classList.contains('hidden')) $('#skill-run-form').requestSubmit();
+  else if (k === 't') openTerminal({ name: 'shell', cwd: activeTab()?.cwd || '~', command: '' });
+  else if (k === 'w') { if (state.activeKey) closeTab(state.activeKey); }
+  else if (k === 'l') $('#prompt').focus();
+  else if (k === 'n') openPresetModal();
+  else if (k === 'g') $('#btn-layout').click();
+  else if (k === 'd') toggleDiff();
+  else if (/^[1-9]$/.test(k)) { const t = state.tabs[+k - 1]; if (t) activate(t.key); }
+  else if (e.shiftKey && (k === ']' || k === '}' || k === '[' || k === '{')) {
+    const i = state.tabs.findIndex((t) => t.key === state.activeKey);
+    const d = k === ']' || k === '}' ? 1 : -1;
+    const t = state.tabs[(i + d + state.tabs.length) % state.tabs.length];
+    if (t) activate(t.key);
+  } else handled = false;
+  if (handled) { e.preventDefault(); e.stopPropagation(); }
+}, true);
+
+/* ---------- Init ---------- */
+
+(async () => {
+  const data = await api.loadData();
+  state.presets = data.presets || [];
+  state.prompts = data.prompts || [];
+  state.layout = data.layout || 'tabs';
+  state.skillConfigs = data.skillConfigs || {};
+  state.chatMode = data.chatMode || 'acceptEdits';
+  applyTheme(data.theme || 'nuit');
+  state.customSkills = data.customSkills || [];
+  Object.assign(state.diff, data.diff || {});
+  $('#diff-scope').value = state.diff.scope;
+  $('#diff-auto').checked = state.diff.auto;
+  renderPresets();
+  scanSkills();
+  renderTabs();
+  applyLayout();
+  window.addEventListener('resize', () => state.tabs.forEach(fitTab));
+})();
