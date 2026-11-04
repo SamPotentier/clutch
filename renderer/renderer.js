@@ -254,12 +254,20 @@ function applyLayout() {
   else if (!g && state.layout === 'grid' && spaceTabs().length > 1) { shown = spaceTabs(); mode = 'grid'; }
   const terms = $('#terms');
   terms.classList.toggle('grid', mode !== 'tabs');
-  for (const t of state.tabs) t.wrap.classList.toggle('shown', shown.includes(t));
+  for (const t of state.tabs) {
+    t.wrap.classList.toggle('shown', shown.includes(t));
+    t.wrap.style.gridRow = t.wrap.style.gridColumn = '';
+  }
   if (mode !== 'tabs') {
     const n = shown.length;
-    const cols = mode === 'cols' ? n : mode === 'rows' ? 1 : Math.ceil(Math.sqrt(n));
+    // main-left : le premier terminal prend la moitié gauche, les autres s'empilent à droite
+    // main-top : le premier prend le haut, les autres se partagent le bas
+    let cols = mode === 'cols' ? n : mode === 'rows' ? 1 : Math.ceil(Math.sqrt(n));
+    let rows = Math.ceil(n / cols);
+    if (mode === 'main-left') { cols = 2; rows = n - 1; shown[0].wrap.style.gridRow = `1 / span ${rows}`; }
+    if (mode === 'main-top') { cols = n - 1; rows = 2; shown[0].wrap.style.gridColumn = `1 / span ${cols}`; }
     terms.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
-    terms.style.gridTemplateRows = `repeat(${Math.ceil(n / cols)}, minmax(0, 1fr))`;
+    terms.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
   } else {
     terms.style.gridTemplateColumns = terms.style.gridTemplateRows = '';
   }
@@ -493,6 +501,7 @@ function renderLaunch() {
       <select class="pane-dir" title="Dossier">${dirs.map((d) => `<option value="${esc(d)}">📁 ${d ? esc(d) : 'racine'}</option>`).join('')}</select>
       <select class="pane-kind">${PANE_KINDS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
       <input class="pane-cmd${x.kind ? '' : ' hidden'}" spellcheck="false" placeholder="${x.kind === 'claude' ? 'options, ex. --model sonnet' : 'npm run dev'}">
+      <button type="button" class="pane-up" title="Monter (le premier terminal est le principal)"${i ? '' : ' disabled'}>↑</button>
       <button type="button" class="pane-del" title="Retirer"${modalPanes.length === 1 ? ' disabled' : ''}>×</button>`;
     row.querySelector('.pane-dir').value = x.dir;
     row.querySelector('.pane-kind').value = x.kind;
@@ -505,6 +514,7 @@ function renderLaunch() {
       if (x.kind === 'custom') el.children[i].querySelector('.pane-cmd').focus();
     };
     row.querySelector('.pane-cmd').oninput = (e) => { x.arg = e.target.value; };
+    row.querySelector('.pane-up').onclick = () => { modalPanes.splice(i - 1, 0, ...modalPanes.splice(i, 1)); renderLaunch(); };
     row.querySelector('.pane-del').onclick = () => { modalPanes.splice(i, 1); renderLaunch(); };
     el.appendChild(row);
   });

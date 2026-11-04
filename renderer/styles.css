@@ -531,11 +531,11 @@ button.link { border: none; background: none; color: var(--accent); padding: 0; 
 .pane-row { display: flex; gap: 6px; align-items: center; }
 .pane-row select { flex: 0 0 auto; width: auto; }
 .pane-row input { flex: 1; min-width: 0; }
-.pane-row .pane-del { flex: 0 0 auto; padding: 4px 9px; }
+.pane-row :is(.pane-del, .pane-up) { flex: 0 0 auto; padding: 4px 9px; }
 .launch-add { display: flex; gap: 6px; }
 .launch-add button { font-size: 12px; }
 .seg { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; width: fit-content; }
-.seg button { border: 0; border-radius: 0; background: transparent; font-size: 12px; padding: 5px 10px; }
+.seg button { border: 0; border-radius: 0; background: transparent; font-size: 12px; padding: 5px 8px; white-space: nowrap; }
 .seg button + button { border-left: 1px solid var(--border); }
 .seg button.on { background: var(--accent); color: var(--bg); }
 .seg.disabled { opacity: .45; pointer-events: none; }
