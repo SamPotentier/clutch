@@ -105,8 +105,8 @@ function scanCommandsDir(dir, opts) {
   }
 }
 
-function scanSkills(projectDirs) {
-  const claude = path.join(os.homedir(), '.claude');
+function scanSkills(projectDirs, configDir) {
+  const claude = claudeHome(configDir);
   const out = [
     ...scanSkillsDir(path.join(claude, 'skills'), { source: 'perso' }),
     ...scanCommandsDir(path.join(claude, 'commands'), { source: 'perso' }),
@@ -415,7 +415,7 @@ ipcMain.handle('fs:subdirs', (_e, dir) => {
     return [];
   }
 });
-ipcMain.handle('skills:scan', (_e, projectDirs) => scanSkills(projectDirs || []));
+ipcMain.handle('skills:scan', (_e, projectDirs, configDir) => scanSkills(projectDirs || [], configDir));
 ipcMain.handle('pty:create', (_e, opts) => createPty(opts));
 ipcMain.on('win:bg', (_e, color) => win?.setBackgroundColor(color));
 ipcMain.on('pty:write', (_e, id, data) => ptys.get(id)?.write(data));

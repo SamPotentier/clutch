@@ -54,13 +54,13 @@ const currentTheme = () => THEMES[state.theme] || THEMES.nuit;
 const SCROLLBAR = { scrollbarSliderBackground: 'rgba(127,127,127,.22)', scrollbarSliderHoverBackground: 'rgba(127,127,127,.38)', scrollbarSliderActiveBackground: 'rgba(127,127,127,.5)', overviewRulerBorder: 'rgba(0,0,0,0)' };
 const termOptions = (th) => ({ theme: { ...SCROLLBAR, ...th.xterm }, fontSize: th.fontSize, lineHeight: th.lineHeight, cursorStyle: th.cursor, fontFamily: NERD_MONO });
 
-const state = { theme: 'nuit', accounts: [], presets: [], prompts: [], layout: 'tabs', tabs: [], activeKey: null, skills: [], skillConfigs: {}, customSkills: [],
+const state = { theme: 'nuit', accounts: [], account: '', defaultName: 'Pro', lastActive: {}, presets: [], prompts: [], layout: 'tabs', tabs: [], activeKey: null, skills: [], skillConfigs: {}, customSkills: [],
   diff: { open: false, scope: 'session', auto: true, width: 560, collapsed: new Set() } };
 const byPty = new Map(); // ptyId -> tab
 
 function persist() {
   api.saveData({
-    theme: state.theme, accounts: state.accounts, chatMode: state.chatMode, presets: state.presets, prompts: state.prompts, layout: state.layout,
+    theme: state.theme, accounts: state.accounts, account: state.account, defaultName: state.defaultName, chatMode: state.chatMode, presets: state.presets, prompts: state.prompts, layout: state.layout,
     skillConfigs: state.skillConfigs, customSkills: state.customSkills,
     diff: { scope: state.diff.scope, auto: state.diff.auto, width: state.diff.width },
   });
@@ -68,7 +68,7 @@ function persist() {
 
 /* ---------- Terminaux ---------- */
 
-async function openTerminal({ name, cwd, command, color, presetId, accountId = '' }) {
+async function openTerminal({ name, cwd, command, color, presetId, accountId = state.account }) {
   const sameName = state.tabs.filter((t) => t.baseName === name).length;
   const tab = {
     key: uid(), presetId, baseName: name, title: sameName ? `${name} (${sameName + 1})` : name,
@@ -105,6 +105,7 @@ async function openTerminal({ name, cwd, command, color, presetId, accountId = '
   new ResizeObserver(() => fitTab(tab)).observe(tab.wrap);
 
   state.tabs.push(tab);
+  tab.wrap.classList.toggle('away', !inSpace(tab));
   applyLayout();
   activate(tab.key);
   fitTab(tab);
@@ -147,7 +148,8 @@ function closeTab(key) {
   tab.wrap.remove();
   state.tabs.splice(i, 1);
   if (state.activeKey === key) {
-    const next = state.tabs[i] || state.tabs[i - 1];
+    const rest = spaceTabs();
+    const next = rest.find((t) => state.tabs.indexOf(t) >= i) || rest[rest.length - 1];
     state.activeKey = null;
     if (next) activate(next.key);
   }
@@ -159,7 +161,7 @@ function closeTab(key) {
 
 function activate(key) {
   const tab = state.tabs.find((t) => t.key === key);
-  if (!tab) return;
+  if (!tab || !inSpace(tab)) return;
   state.activeKey = key;
   tab.activity = false;
   tab.bell = false;
@@ -172,7 +174,7 @@ function activate(key) {
   requestAnimationFrame(() => { fitTab(tab); focusTab(tab); });
 }
 
-const activeTab = () => state.tabs.find((t) => t.key === state.activeKey);
+const activeTab = () => state.tabs.find((t) => t.key === state.activeKey && inSpace(t));
 const focusTab = (t) => (t?.kind === 'chat' ? $('#prompt').focus() : t?.term.focus());
 const focusActive = () => focusTab(activeTab());
 
@@ -197,30 +199,31 @@ api.onExit((id, code) => {
 function renderTabs() {
   const el = $('#tabs');
   el.innerHTML = '';
-  state.tabs.forEach((t, i) => {
+  spaceTabs().forEach((t, i) => {
     const d = document.createElement('div');
     d.className = 'tab' + (t.key === state.activeKey ? ' active' : '') + (t.exited && t.kind !== 'chat' ? ' exited' : '') + (t.bell ? ' bell' : t.activity ? ' activity' : '');
     d.title = `${shortPath(t.cwd)}${t.command ? ' — ' + t.command : ''}${i < 9 ? `  (⌘${i + 1})` : ''}`;
-    d.innerHTML = `<span class="dot" style="background:${t.color}"></span><span class="title">${esc(t.title)}</span>${t.accountId ? `<span class="account-badge small">${esc(accountFor(t.accountId).name)}</span>` : ''}<span class="badge"></span><button class="close" title="Fermer (⌘W)">×</button>`;
+    d.innerHTML = `<span class="dot" style="background:${t.color}"></span><span class="title">${esc(t.title)}</span><span class="badge"></span><button class="close" title="Fermer (⌘W)">×</button>`;
     d.onclick = () => activate(t.key);
     d.onauxclick = (e) => e.button === 1 && closeTab(t.key);
     d.querySelector('.close').onclick = (e) => { e.stopPropagation(); closeTab(t.key); };
     el.appendChild(d);
   });
-  $('#empty').classList.toggle('hidden', state.tabs.length > 0);
+  $('#empty').classList.toggle('hidden', spaceTabs().length > 0);
+  renderSpaceSwitch();
 }
 
 function renderPresets() {
   const q = $('#preset-filter').value.trim().toLowerCase();
   const el = $('#preset-list');
   el.innerHTML = '';
-  for (const p of state.presets) {
+  for (const p of spacePresets()) {
     if (q && !`${p.name} ${p.cwd}`.toLowerCase().includes(q)) continue;
     const n = state.tabs.filter((t) => t.presetId === p.id && !t.exited).length;
     const li = document.createElement('li');
     li.title = `${p.cwd}${p.command ? '\n$ ' + p.command : ''}`;
     li.innerHTML = `<span class="dot" style="background:${p.color}"></span>
-      <div class="info"><div class="name">${esc(p.name)}${p.accountId ? ` <span class="account-badge small">${esc(accountFor(p.accountId).name)}</span>` : ''}</div><div class="path">${esc(shortPath(p.cwd))}${p.command ? ' · ' + esc(p.command) : ''}</div></div>
+      <div class="info"><div class="name">${esc(p.name)}</div><div class="path">${esc(shortPath(p.cwd))}${p.command ? ' · ' + esc(p.command) : ''}</div></div>
       ${n ? `<span class="count">${n}</span>` : ''}
       <div class="tools"><button data-a="skill" title="Lancer un skill sur ce projet (⌘J)">⚡</button><button data-a="edit" title="Modifier">✎</button><button data-a="del" title="Supprimer">🗑</button></div>`;
     li.onclick = (e) => {
@@ -232,15 +235,15 @@ function renderPresets() {
     };
     el.appendChild(li);
   }
-  if (!state.presets.length) el.innerHTML = '<li style="cursor:default;color:var(--muted)">Aucun preset. Clique sur ＋ ou ⇩ pour importer un dossier de projets.</li>';
+  if (!spacePresets().length) el.innerHTML = '<li style="cursor:default;color:var(--muted)">Aucun preset. Clique sur ＋ ou ⇩ pour importer un dossier de projets.</li>';
 }
 
 function applyLayout() {
-  const grid = state.layout === 'grid' && state.tabs.length > 1;
+  const grid = state.layout === 'grid' && spaceTabs().length > 1;
   const terms = $('#terms');
   terms.classList.toggle('grid', grid);
   if (grid) {
-    const n = state.tabs.length;
+    const n = spaceTabs().length;
     const cols = Math.ceil(Math.sqrt(n));
     terms.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
     terms.style.gridTemplateRows = `repeat(${Math.ceil(n / cols)}, minmax(0, 1fr))`;
@@ -268,30 +271,41 @@ function openSession(p, { prompt = '', title, accountId = p.accountId || '' } = 
 
 /* ---------- Comptes Claude ---------- */
 
-const DEFAULT_ACCOUNT = { id: '', name: 'Par défaut', dir: '' };
-const accountFor = (id) => state.accounts.find((a) => a.id === id) || DEFAULT_ACCOUNT;
-const accountOptions = (selected) => [DEFAULT_ACCOUNT, ...state.accounts]
+// Le compte « par défaut » utilise ~/.claude ; son nom est modifiable (Pro par défaut)
+const defaultAccount = () => ({ id: '', name: state.defaultName || 'Pro', dir: '' });
+const allAccounts = () => [defaultAccount(), ...state.accounts];
+const accountFor = (id) => state.accounts.find((a) => a.id === id) || defaultAccount();
+const accountOptions = (selected) => allAccounts()
   .map((a) => `<option value="${a.id}"${a.id === (selected || '') ? ' selected' : ''}>${esc(a.name)} — ${esc(a.dir || '~/.claude')}</option>`).join('');
 
 function renderAccounts() {
   const list = $('#account-list');
   list.innerHTML = '';
-  for (const a of [DEFAULT_ACCOUNT, ...state.accounts]) {
+  for (const a of allAccounts()) {
     const used = state.presets.filter((p) => (p.accountId || '') === a.id).length;
     const row = el('div', 'account-row', `
-      <span class="account-badge">${esc(a.name)}</span>
+      <input class="account-name" value="${esc(a.name)}" spellcheck="false" title="Renommer">
       <code>${esc(a.dir || '~/.claude')}</code>
       <span class="account-used">${used} projet${used > 1 ? 's' : ''}</span>
       <button data-a="login" title="Ouvre Claude avec ce compte : il demande de se connecter si ce n'est pas encore fait (sinon tape /login)">Se connecter</button>
       ${a.id ? '<button data-a="del" title="Retirer ce compte de Clutch (le dossier n’est pas supprimé)">×</button>' : ''}`);
+    row.querySelector('.account-name').onchange = (e) => {
+      const name = e.target.value.trim() || a.name;
+      if (a.id) state.accounts.find((x) => x.id === a.id).name = name;
+      else state.defaultName = name;
+      persist();
+      renderSpaceSwitch();
+    };
     row.onclick = (e) => {
       const action = e.target.dataset?.a;
       if (action === 'login') {
         closeOverlay($('#accounts'));
+        switchSpace(a.id);
         openTerminal({ name: `Connexion · ${a.name}`, cwd: '~', command: 'claude', accountId: a.id });
       } else if (action === 'del' && confirm(`Retirer le compte « ${a.name} » de Clutch ? Les projets qui l’utilisent repasseront sur le compte par défaut.`)) {
         state.accounts = state.accounts.filter((x) => x.id !== a.id);
         state.presets.forEach((p) => { if (p.accountId === a.id) p.accountId = ''; });
+        if (state.account === a.id) switchSpace('');
         persist();
         renderAccounts();
         renderPresets();
@@ -321,10 +335,56 @@ $('#account-form').onsubmit = (e) => {
   f.reset();
   f.dir.placeholder = '~/.claude-perso';
   renderAccounts();
+  renderSpaceSwitch();
   // Le formulaire de preset ouvert en dessous doit proposer le nouveau compte
   $('#preset-account').innerHTML = accountOptions($('#preset-account').value);
 };
 $('#btn-accounts').onclick = openAccounts;
+
+/* Espaces : un compte à la fois, ses projets, ses onglets et ses skills */
+
+function inSpace(x) { return (x.accountId || '') === state.account; }
+function spaceTabs() { return state.tabs.filter(inSpace); }
+function spacePresets() { return state.presets.filter(inSpace); }
+
+function renderSpaceSwitch() {
+  const sw = $('#space-switch');
+  sw.innerHTML = allAccounts().map((a) => {
+    // Un point signale de l'activité dans un espace masqué (Claude a fini, demande quelque chose…)
+    const busy = a.id !== state.account && state.tabs.some((t) => (t.accountId || '') === a.id && (t.bell || t.activity));
+    return `<button data-id="${a.id}" class="${a.id === state.account ? 'on' : ''}" title="${esc(a.dir || '~/.claude')}">${esc(a.name)}${busy ? '<span class="space-dot"></span>' : ''}</button>`;
+  }).join('') + (state.accounts.length ? '' : '<button data-add title="Ajouter un compte (ex. Perso)">＋ Perso</button>');
+  document.title = state.accounts.length ? `Clutch — ${accountFor(state.account).name}` : 'Clutch';
+}
+
+function switchSpace(id) {
+  if (id === state.account) return;
+  state.lastActive[state.account] = state.activeKey;
+  state.account = id;
+  persist();
+  state.activeKey = null;
+  for (const t of state.tabs) {
+    t.wrap.classList.toggle('away', !inSpace(t));
+    t.wrap.classList.remove('visible', 'active');
+  }
+  const tabs = spaceTabs();
+  const back = tabs.find((t) => t.key === state.lastActive[id]) || tabs[0];
+  $('#preset-filter').value = '';
+  $('#skill-filter').value = '';
+  renderPresets();
+  renderTabs();
+  applyLayout();
+  scanSkills();
+  if (back) activate(back.key);
+  else refreshDiff();
+}
+
+$('#space-switch').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.hasAttribute('data-add')) return openAccounts();
+  switchSpace(b.dataset.id);
+});
 $('#preset-account').addEventListener('change', (e) => {
   if (e.target.value !== '__add') return;
   e.target.value = editing?.accountId || '';
@@ -351,7 +411,7 @@ function openPresetModal(p) {
   f.name.value = p?.name || '';
   f.cwd.value = p?.cwd || '';
   f.command.value = p ? p.command || '' : 'claude';
-  $('#preset-account').innerHTML = accountOptions(p?.accountId) + '<option value="__add">＋ Ajouter un compte…</option>';
+  $('#preset-account').innerHTML = accountOptions(p ? p.accountId : state.account) + '<option value="__add">＋ Ajouter un compte…</option>';
   pickedColor = p?.color || COLORS[state.presets.length % COLORS.length];
   renderColors();
   $('#modal').classList.remove('hidden');
@@ -378,6 +438,7 @@ $('#preset-form').onsubmit = (e) => {
   const data = { name: f.name.value.trim(), cwd: f.cwd.value.trim(), command: f.command.value.trim(), color: pickedColor, accountId: f.account.value === '__add' ? '' : f.account.value };
   if (editing) Object.assign(editing, data);
   else state.presets.push({ id: uid(), ...data });
+  if (data.accountId !== state.account) renderSpaceSwitch();
   state.presets.sort((a, b) => a.name.localeCompare(b.name));
   persist();
   renderPresets();
@@ -396,9 +457,9 @@ $('#btn-add').onclick = () => openPresetModal();
 $('#btn-import').onclick = async () => {
   const dir = await api.pickFolder();
   if (!dir) return;
-  const known = new Set(state.presets.map((p) => p.cwd));
+  const known = new Set(spacePresets().map((p) => p.cwd));
   const dirs = (await api.subdirs(dir)).filter((d) => !known.has(d.path));
-  dirs.forEach((d, i) => state.presets.push({ id: uid(), name: d.name, cwd: d.path, command: 'claude', color: COLORS[(state.presets.length + i) % COLORS.length] }));
+  dirs.forEach((d, i) => state.presets.push({ id: uid(), name: d.name, cwd: d.path, command: 'claude', color: COLORS[(state.presets.length + i) % COLORS.length], accountId: state.account }));
   state.presets.sort((a, b) => a.name.localeCompare(b.name));
   persist();
   renderPresets();
@@ -455,7 +516,7 @@ function toggleFav(skill) {
 }
 
 async function scanSkills() {
-  state.skills = await api.scanSkills(state.presets.map((p) => p.cwd));
+  state.skills = await api.scanSkills(spacePresets().map((p) => p.cwd), accountFor(state.account).dir);
   renderSkills();
 }
 
@@ -507,7 +568,7 @@ function closeOverlay(el) {
 let running = null;
 
 function openSkillRun(skill, presetId) {
-  const presets = skill.project ? state.presets.filter((p) => p.cwd === skill.project) : state.presets;
+  const presets = skill.project ? spacePresets().filter((p) => p.cwd === skill.project) : spacePresets();
   if (!presets.length) return openPresetModal();
   running = skill;
   const last = state.skillConfigs[skill.key]?.last;
@@ -554,9 +615,6 @@ function openSkillRun(skill, presetId) {
 
 function renderRunTargets() {
   const pid = $('#skill-run-preset').value;
-  // Le compte suit celui du projet choisi ; on peut en changer pour ce lancement
-  $('#skill-run-account-row').classList.toggle('hidden', !state.accounts.length);
-  $('#skill-run-account').innerHTML = accountOptions(state.presets.find((p) => p.id === pid)?.accountId);
   const tabs = state.tabs.filter((t) => t.presetId === pid && !t.exited);
   $('#skill-run-target').innerHTML = '<option value="new">Nouveau terminal Claude</option>'
     + tabs.map((t) => `<option value="${t.key}">Session ouverte : ${esc(t.title)}</option>`).join('');
@@ -594,7 +652,7 @@ $('#skill-run-form').onsubmit = (e) => {
     activate(tab.key);
     sendToTab(tab, prompt);
   } else {
-    openSession(p, { prompt, title: `${p.name} · ${running.name}`, accountId: $('#skill-run-account').value });
+    openSession(p, { prompt, title: `${p.name} · ${running.name}` });
   }
 };
 $('#btn-skill-run-edit').onclick = () => {
@@ -903,7 +961,7 @@ function sendPrompt() {
   if (!text) return;
   // Une conversation en pause se reprend toute seule au prochain message
   const alive = (t) => t && (!t.exited || t.kind === 'chat');
-  const targets = $('#prompt-target').value === 'all' ? state.tabs.filter(alive) : [activeTab()].filter(alive);
+  const targets = $('#prompt-target').value === 'all' ? spaceTabs().filter(alive) : [activeTab()].filter(alive);
   if (!targets.length) {
     if (!activeTab()) pickProjectFor(text);
     return;
@@ -916,7 +974,7 @@ function sendPrompt() {
 
 // Aucun terminal ouvert : on demande sur quel projet lancer le prompt (ou le skill)
 function pickProjectFor(text) {
-  if (!state.presets.length) return openPresetModal();
+  if (!spacePresets().length) return openPresetModal();
   const m = text.trim().match(/^\/(\S+)\s*([\s\S]*)$/);
   const skill = m && allSkills().find((sk) => sk.invoke === m[1]);
   // « /skill » seul : la fenêtre du skill demande le projet et les infos nécessaires
@@ -1019,13 +1077,14 @@ function renderPalette() {
     .filter((s) => !paletteCtx.presetId || !s.project || s.project === state.presets.find((p) => p.id === paletteCtx.presetId)?.cwd)
     .sort((a, b) => b.fav - a.fav)
     .map((s) => ({ kind: s.fav ? '★ Skill' : 'Skill', label: s.name, sub: s.invoke !== s.name ? s.invoke : s.source, color: 'var(--accent)', run: () => openSkillRun(s, paletteCtx.presetId) }));
-  const pickItems = state.presets.map((p) => ({ kind: 'Lancer ici', label: p.name, sub: shortPath(p.cwd), color: p.color, run: () => paletteCtx.onPick(p) }));
+  const pickItems = spacePresets().map((p) => ({ kind: 'Lancer ici', label: p.name, sub: shortPath(p.cwd), color: p.color, run: () => paletteCtx.onPick(p) }));
   paletteItems = (paletteCtx.mode === 'pick' ? pickItems : paletteCtx.mode === 'skills' ? skillItems : [
-    ...state.presets.map((p) => ({ kind: 'Lancer', label: p.name, sub: shortPath(p.cwd), color: p.color, run: () => launchPreset(p) })),
-    ...state.tabs.map((t) => ({ kind: 'Onglet', label: t.title, sub: shortPath(t.cwd), color: t.color, run: () => activate(t.key) })),
+    ...spacePresets().map((p) => ({ kind: 'Lancer', label: p.name, sub: shortPath(p.cwd), color: p.color, run: () => launchPreset(p) })),
+    ...spaceTabs().map((t) => ({ kind: 'Onglet', label: t.title, sub: shortPath(t.cwd), color: t.color, run: () => activate(t.key) })),
     ...skillItems,
     { kind: 'Action', label: 'Nouveau preset…', sub: '', color: 'transparent', run: () => openPresetModal() },
     { kind: 'Action', label: 'Comptes Claude…', sub: 'pro, perso…', color: 'transparent', run: () => openAccounts() },
+    ...allAccounts().filter((a) => a.id !== state.account).map((a) => ({ kind: 'Compte', label: `Passer sur ${a.name}`, sub: a.dir || '~/.claude', color: 'var(--accent)', run: () => switchSpace(a.id) })),
     ...Object.entries(THEMES).map(([key, th]) => ({ kind: 'Thème', label: `Thème : ${th.label}`, sub: th.desc, color: th.swatches[2], run: () => { applyTheme(key); persist(); } })),
   ]).filter((it) => !q || fuzzy(q, `${it.label} ${it.sub}`));
   paletteSel = Math.min(paletteSel, Math.max(paletteItems.length - 1, 0));
@@ -1077,11 +1136,12 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'n') openPresetModal();
   else if (k === 'g') $('#btn-layout').click();
   else if (k === 'd') toggleDiff();
-  else if (/^[1-9]$/.test(k)) { const t = state.tabs[+k - 1]; if (t) activate(t.key); }
+  else if (/^[1-9]$/.test(k)) { const t = spaceTabs()[+k - 1]; if (t) activate(t.key); }
   else if (e.shiftKey && (k === ']' || k === '}' || k === '[' || k === '{')) {
-    const i = state.tabs.findIndex((t) => t.key === state.activeKey);
+    const tabs = spaceTabs();
+    const i = tabs.findIndex((t) => t.key === state.activeKey);
     const d = k === ']' || k === '}' ? 1 : -1;
-    const t = state.tabs[(i + d + state.tabs.length) % state.tabs.length];
+    const t = tabs[(i + d + tabs.length) % tabs.length];
     if (t) activate(t.key);
   } else handled = false;
   if (handled) { e.preventDefault(); e.stopPropagation(); }
@@ -1097,6 +1157,8 @@ window.addEventListener('keydown', (e) => {
   state.skillConfigs = data.skillConfigs || {};
   state.chatMode = data.chatMode || 'acceptEdits';
   state.accounts = data.accounts || [];
+  state.defaultName = data.defaultName || 'Pro';
+  state.account = state.accounts.some((a) => a.id === data.account) ? data.account : '';
   applyTheme(data.theme || 'nuit');
   state.customSkills = data.customSkills || [];
   Object.assign(state.diff, data.diff || {});

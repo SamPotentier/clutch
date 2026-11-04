@@ -11,6 +11,7 @@
   <div id="app">
     <aside id="sidebar">
       <div class="drag-zone"></div>
+      <div id="space-switch" class="space-switch"></div>
       <div class="side-tabs">
         <button data-view="projects" class="on">Projets</button>
         <button data-view="skills">Skills</button>
@@ -129,7 +130,6 @@
       <h3 id="skill-run-title"></h3>
       <div id="skill-run-desc" class="desc"></div>
       <label>Projet<select name="preset" id="skill-run-preset"></select></label>
-      <label id="skill-run-account-row">Compte Claude<select id="skill-run-account"></select></label>
       <div id="skill-run-fields"></div>
       <label>Lancer dans<select name="target" id="skill-run-target"></select></label>
       <label>Aperçu<pre id="skill-run-preview" class="preview"></pre></label>
@@ -165,7 +165,7 @@
   <div id="accounts" class="overlay hidden">
     <div class="dialog wide">
       <h3>Comptes Claude</h3>
-      <div class="desc">Chaque compte utilise son propre dossier de configuration (<code>CLAUDE_CONFIG_DIR</code>) : connexion, réglages et historique séparés. Choisis ensuite le compte de chaque projet dans ses réglages.</div>
+      <div class="desc">Chaque compte utilise son propre dossier de configuration (<code>CLAUDE_CONFIG_DIR</code>) : connexion, réglages et historique séparés. Le bouton tout en haut à gauche bascule d'un compte à l'autre : chaque compte a ses propres projets et onglets.</div>
       <div id="account-list"></div>
       <form id="account-form" class="account-add">
         <input name="name" placeholder="Nom (ex. Perso)" required spellcheck="false">

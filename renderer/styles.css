@@ -513,3 +513,12 @@ button.link { border: none; background: none; color: var(--accent); padding: 0; 
 .account-add { display: flex; gap: 6px; }
 .account-add input { flex: 1; }
 .dialog .desc code { font-family: var(--mono); font-size: 11.5px; }
+
+/* Bascule de compte (Pro / Perso) */
+.space-switch { display: flex; gap: 4px; margin: -6px 12px 12px; padding: 3px; border-radius: var(--r2); background: var(--bg-3); -webkit-app-region: no-drag; }
+.space-switch button { flex: 1; position: relative; border: none; background: transparent; color: var(--muted); padding: 6px 4px; font-weight: 600; border-radius: var(--r); }
+.space-switch button.on { background: var(--accent); color: var(--on-accent); }
+.space-switch button[data-add] { flex: 0 0 auto; padding: 6px 10px; font-weight: 400; }
+.space-dot { position: absolute; top: 4px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.term-wrap.away { display: none !important; }
+.account-name { flex: 0 0 130px; font-weight: 600; padding: 3px 8px; }

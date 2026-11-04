@@ -77,7 +77,7 @@ function md(src) {
 
 /* Ouverture et cycle de vie d'une session */
 
-async function openChat({ name, cwd, color, presetId, accountId = '', extraArgs, prompt }) {
+async function openChat({ name, cwd, color, presetId, accountId = state.account, extraArgs, prompt }) {
   const sameName = state.tabs.filter((t) => t.baseName === name).length;
   const tab = {
     kind: 'chat', key: uid(), presetId, baseName: name, title: sameName ? `${name} (${sameName + 1})` : name,
@@ -107,6 +107,7 @@ async function openChat({ name, cwd, color, presetId, accountId = '', extraArgs,
 
   renderWelcome(tab);
   state.tabs.push(tab);
+  tab.wrap.classList.toggle('away', !inSpace(tab));
   applyLayout();
   activate(tab.key);
   api.gitTrack(cwd).then((g) => {
@@ -599,7 +600,7 @@ function renderChatBar(tab) {
   const status = tab.wrap.querySelector('.chat-status');
   status.innerHTML = tab.busy
     ? `<span class="pulse"></span>${esc(tab.busyLabel || 'Claude travaille…')}`
-    : `<span class="ready"></span>${tab.exited ? 'Session en pause' : 'Prêt'}${tab.accountId ? ` · <span class="account-badge small">${esc(accountFor(tab.accountId).name)}</span>` : ''}${tab.model ? ` · <button class="link model-link" title="Changer de modèle">${esc(tab.model.replace(/^claude-/, ''))} ▾</button>` : ''}`;
+    : `<span class="ready"></span>${tab.exited ? 'Session en pause' : 'Prêt'}${tab.model ? ` · <button class="link model-link" title="Changer de modèle">${esc(tab.model.replace(/^claude-/, ''))} ▾</button>` : ''}`;
   status.querySelector('.model-link')?.addEventListener('click', () => openModelPicker(tab));
   tab.wrap.querySelector('.chat-stop').classList.toggle('hidden', !tab.busy);
 }
