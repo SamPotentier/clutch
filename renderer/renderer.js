@@ -444,8 +444,13 @@ function openSkillRun(skill, presetId) {
   running = skill;
   const last = state.skillConfigs[skill.key]?.last;
   const sel = $('#skill-run-preset');
-  sel.innerHTML = presets.map((p) => `<option value="${p.id}">${esc(p.name)} — ${esc(shortPath(p.cwd))}</option>`).join('');
-  sel.value = (presets.find((p) => p.id === presetId) || presets.find((p) => p.id === last?.presetId) || presets[0]).id;
+  // Sans terminal ouvert, on ne devine pas le projet : on le fait choisir (le dernier utilisé en tête)
+  const ask = !presetId && presets.length > 1;
+  const ordered = ask ? [...presets].sort((a, b) => (b.id === last?.presetId) - (a.id === last?.presetId)) : presets;
+  sel.required = true;
+  sel.innerHTML = (ask ? '<option value="" disabled selected>Choisis un projet…</option>' : '')
+    + ordered.map((p) => `<option value="${p.id}">${esc(p.name)} — ${esc(shortPath(p.cwd))}${ask && p.id === last?.presetId ? ' (dernier utilisé)' : ''}</option>`).join('');
+  sel.value = ask ? '' : (presets.find((p) => p.id === presetId) || presets.find((p) => p.id === last?.presetId) || presets[0]).id;
   $('#skill-run-title').textContent = skill.name;
   $('#skill-run-desc').textContent = skill.description || skill.invoke;
 
@@ -476,7 +481,7 @@ function openSkillRun(skill, presetId) {
   renderRunTargets();
   updateRunPreview();
   $('#skill-run').classList.remove('hidden');
-  (fieldsEl.querySelector('[data-key]') || $('#skill-run-form button[type=submit]')).focus();
+  (ask ? sel : fieldsEl.querySelector('[data-key]') || $('#skill-run-form button[type=submit]')).focus();
 }
 
 function renderRunTargets() {
@@ -502,7 +507,13 @@ $('#skill-run-preset').addEventListener('change', () => { renderRunTargets(); up
 $('#skill-run-form').onsubmit = (e) => {
   e.preventDefault();
   const { p, values } = runValues();
-  if (!p) return;
+  if (!p) {
+    const sel = $('#skill-run-preset');
+    sel.setCustomValidity('Choisis le projet sur lequel lancer ce skill');
+    sel.reportValidity();
+    sel.addEventListener('change', () => sel.setCustomValidity(''), { once: true });
+    return sel.focus();
+  }
   const prompt = fillTemplate(running.template, values);
   state.skillConfigs[running.key] = { ...state.skillConfigs[running.key], last: { presetId: p.id, values } };
   persist();
@@ -822,11 +833,37 @@ function sendPrompt() {
   // Une conversation en pause se reprend toute seule au prochain message
   const alive = (t) => t && (!t.exited || t.kind === 'chat');
   const targets = $('#prompt-target').value === 'all' ? state.tabs.filter(alive) : [activeTab()].filter(alive);
-  if (!targets.length) return;
+  if (!targets.length) {
+    if (!activeTab()) pickProjectFor(text);
+    return;
+  }
   targets.forEach((t) => sendToTab(t, text));
   ta.value = '';
   autoGrow();
   focusActive();
+}
+
+// Aucun terminal ouvert : on demande sur quel projet lancer le prompt (ou le skill)
+function pickProjectFor(text) {
+  if (!state.presets.length) return openPresetModal();
+  const m = text.trim().match(/^\/(\S+)\s*([\s\S]*)$/);
+  const skill = m && allSkills().find((sk) => sk.invoke === m[1]);
+  // « /skill » seul : la fenêtre du skill demande le projet et les infos nécessaires
+  if (skill && !m[2]) {
+    $('#prompt').value = '';
+    autoGrow();
+    return openSkillRun(skill);
+  }
+  const short = text.length > 50 ? text.slice(0, 50) + '…' : text;
+  openPalette({
+    mode: 'pick',
+    title: `Lancer « ${short} » sur quel projet ?`,
+    onPick: (p) => {
+      $('#prompt').value = '';
+      autoGrow();
+      openSession(p, { prompt: text, title: skill ? `${p.name} · ${skill.name}` : undefined });
+    },
+  });
 }
 
 function sendToTab(t, text) {
@@ -890,7 +927,7 @@ function openPalette(ctx = {}) {
   $('#palette').classList.remove('hidden');
   $('#palette-input').value = '';
   const p = state.presets.find((x) => x.id === ctx.presetId);
-  $('#palette-input').placeholder = ctx.mode === 'skills'
+  $('#palette-input').placeholder = ctx.mode === 'pick' ? ctx.title : ctx.mode === 'skills'
     ? `Lancer un skill${p ? ' sur ' + p.name : ''}…`
     : 'Lancer un projet, un skill ou aller à un onglet…';
   renderPalette();
@@ -911,7 +948,8 @@ function renderPalette() {
     .filter((s) => !paletteCtx.presetId || !s.project || s.project === state.presets.find((p) => p.id === paletteCtx.presetId)?.cwd)
     .sort((a, b) => b.fav - a.fav)
     .map((s) => ({ kind: s.fav ? '★ Skill' : 'Skill', label: s.name, sub: s.invoke !== s.name ? s.invoke : s.source, color: 'var(--accent)', run: () => openSkillRun(s, paletteCtx.presetId) }));
-  paletteItems = (paletteCtx.mode === 'skills' ? skillItems : [
+  const pickItems = state.presets.map((p) => ({ kind: 'Lancer ici', label: p.name, sub: shortPath(p.cwd), color: p.color, run: () => paletteCtx.onPick(p) }));
+  paletteItems = (paletteCtx.mode === 'pick' ? pickItems : paletteCtx.mode === 'skills' ? skillItems : [
     ...state.presets.map((p) => ({ kind: 'Lancer', label: p.name, sub: shortPath(p.cwd), color: p.color, run: () => launchPreset(p) })),
     ...state.tabs.map((t) => ({ kind: 'Onglet', label: t.title, sub: shortPath(t.cwd), color: t.color, run: () => activate(t.key) })),
     ...skillItems,

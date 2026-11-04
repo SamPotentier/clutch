@@ -735,10 +735,12 @@ function renderSlash() {
   const pop = $('#slash-pop');
   const tab = activeTab();
   const m = $('#prompt').value.match(/^\/([\w:.-]*)$/);
-  if (!tab || tab.kind !== 'chat' || !m) { pop.classList.add('hidden'); slashItems = []; return; }
+  // Dans une conversation : commandes et skills. Sans terminal ouvert : les skills, lancés sur un projet au choix
+  if (!m || (tab && tab.kind !== 'chat')) { pop.classList.add('hidden'); slashItems = []; return; }
   const q = m[1].toLowerCase();
   // Claude n'envoie sa liste de commandes qu'au premier message : les courantes sont connues d'avance
-  const all = [...new Set([...Object.keys(COMMAND_HELP), ...(tab.slashCommands || []), ...state.skills.map((sk) => sk.invoke)])].filter((c) => !c.startsWith('__'));
+  const commands = tab ? [...Object.keys(COMMAND_HELP), ...(tab.slashCommands || [])] : [];
+  const all = [...new Set([...commands, ...allSkills().map((sk) => sk.invoke)])].filter((c) => !c.startsWith('__'));
   slashItems = all
     .filter((c) => c.toLowerCase().includes(q))
     .sort((a, b) => (b.toLowerCase().startsWith(q) - a.toLowerCase().startsWith(q)) || (!!COMMAND_HELP[b] - !!COMMAND_HELP[a]) || a.localeCompare(b))
@@ -751,6 +753,12 @@ function renderSlash() {
 function pickSlash(i) {
   const c = slashItems[i];
   if (!c) return;
+  if (!activeTab()) {
+    $('#prompt').value = '';
+    $('#slash-pop').classList.add('hidden');
+    slashItems = [];
+    return openSkillRun(allSkills().find((sk) => sk.invoke === c));
+  }
   if (c === 'model' || c === 'resume') {
     $('#prompt').value = '';
     $('#slash-pop').classList.add('hidden');
