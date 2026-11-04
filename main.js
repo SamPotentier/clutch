@@ -443,6 +443,45 @@ ipcMain.handle('bg:read', (_e, file) => {
     return null;
   }
 });
+// Reconstruire et relancer : `npm run app` dans le dossier des sources, puis on rouvre l'app installée
+function sourceDir() {
+  if (!app.isPackaged) return __dirname;
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'source.json'), 'utf8')).source; } catch { return null; }
+}
+ipcMain.handle('app:can-rebuild', () => {
+  const dir = sourceDir();
+  return !!dir && fs.existsSync(path.join(dir, 'build', 'make-app.sh'));
+});
+ipcMain.handle('app:rebuild', async (_e, openCount) => {
+  const dir = sourceDir();
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'question', buttons: ['Reconstruire et relancer', 'Annuler'], defaultId: 0, cancelId: 1,
+    message: 'Reconstruire et relancer Clutch ?',
+    detail: `Clutch est reconstruit depuis ${dir.replace(os.homedir(), '~')}, puis relancé.`
+      + (openCount ? ` ${openCount} terminal${openCount > 1 ? 'aux ouverts seront fermés' : ' ouvert sera fermé'} au moment de la relance ; les conversations Claude restent reprenables.` : ''),
+  });
+  if (response !== 0) return { cancelled: true };
+  const PATH = await getLoginPath();
+  return new Promise((resolve) => {
+    let log = '';
+    const child = spawn('npm', ['run', 'app'], { cwd: dir, env: { ...process.env, PATH } });
+    const onData = (d) => { log += d; win?.webContents.send('app:rebuild-log', String(d)); };
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
+    child.on('error', (err) => { log += err.message; });
+    child.on('close', async (code) => {
+      if (code !== 0) {
+        resolve({ ok: false });
+        await dialog.showMessageBox(win, { type: 'error', message: 'La reconstruction a échoué', detail: log.trim().split('\n').slice(-25).join('\n') });
+        return;
+      }
+      resolve({ ok: true });
+      spawn('/bin/sh', ['-c', 'sleep 1; open -n /Applications/Clutch.app'], { detached: true, stdio: 'ignore' }).unref();
+      quitting = true;
+      app.quit();
+    });
+  });
+});
 ipcMain.handle('usage:get', (_e, configDir) => claudeUsage(configDir));
 ipcMain.handle('fs:subdirs', (_e, dir) => {
   try {

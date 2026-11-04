@@ -1631,6 +1631,26 @@ document.addEventListener('click', (e) => {
 window.addEventListener('focus', () => refreshUsage());
 setInterval(() => refreshUsage(true), 5 * 60000);
 
+/* ---------- Reconstruire et relancer ---------- */
+
+api.canRebuild().then((ok) => $('#btn-rebuild').classList.toggle('hidden', !ok));
+$('#btn-rebuild').onclick = async () => {
+  const b = $('#btn-rebuild');
+  if (b.classList.contains('busy')) return;
+  b.classList.add('busy');
+  b.title = 'Reconstruction en cours…';
+  const res = await api.rebuild(state.tabs.filter((t) => !t.exited).length);
+  // En cas de succès l'app se ferme et se relance ; sinon on rend la main
+  if (!res?.ok) {
+    b.classList.remove('busy');
+    b.title = 'Reconstruire et relancer Clutch';
+  }
+};
+api.onRebuildLog((text) => {
+  const line = text.trim().split('\n').pop();
+  if (line) $('#btn-rebuild').title = `Reconstruction en cours… ${line.slice(0, 120)}`;
+});
+
 /* ---------- Init ---------- */
 
 (async () => {

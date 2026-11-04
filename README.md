@@ -66,6 +66,7 @@ Le bouton ＋ de l'onglet Skills crée un modèle personnalisé qui ne dépend d
 
 - La commande du preset tourne dans un shell de login interactif (`$SHELL -l -i`), donc le `PATH`, les alias et nvm sont chargés. Quand elle se termine, on retombe dans un shell dans le même dossier.
 - Pour démarrer Claude avec un prompt initial, mets-le dans la commande du preset : `claude "lis le README et résume l'état du projet"`.
+- Le bouton tout en haut à droite (flèches circulaires) **reconstruit et relance** Clutch depuis ses sources (`npm run app`), par exemple après une modification du code. En cas d'échec, la fin du journal s'affiche et l'app reste ouverte.
 - La croix rouge cache la fenêtre (comme Discord) : les terminaux et les conversations continuent en arrière-plan. Clique sur l’icône du Dock pour la retrouver ; `⌘Q` quitte vraiment.
 - Les données (presets, prompts) sont dans `~/Library/Application Support/Clutch/data.json`.
 - Les glyphes Powerline/p10k demandent une Nerd Font (`brew install --cask font-meslo-lg-nerd-font`).
