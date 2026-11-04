@@ -144,7 +144,8 @@ kbd { background: var(--bg-3); border: 1px solid var(--border); border-radius: 4
 .side-list .group { cursor: default; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; padding: 10px 8px 4px; }
 .side-list .group:hover { background: transparent; }
 .tag { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--bg); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; }
-.skill-icon { width: 9px; text-align: center; color: var(--accent); flex-shrink: 0; }
+.skill-icon { display: inline-flex; color: var(--accent); flex-shrink: 0; }
+.skill-icon .ic { width: 13px; height: 13px; }
 
 /* Dialogs skills */
 .dialog.wide { width: 620px; max-height: 80vh; overflow-y: auto; }
@@ -191,7 +192,7 @@ body.resizing .xterm { pointer-events: none; }
 .diff-empty { color: var(--muted); padding: 30px 16px; text-align: center; }
 .dfile { margin: 8px 10px; border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--bg); }
 .dfile-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg-3); cursor: pointer; font-family: var(--mono); font-size: 12px; }
-.dfile-head .caret { color: var(--muted); transition: transform .1s; }
+.dfile-head .caret { display: inline-flex; color: var(--muted); transition: transform .1s; }
 .dfile.collapsed .caret { transform: rotate(-90deg); }
 .dfile.collapsed .dt { display: none; }
 .dpath { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -438,7 +439,7 @@ details.tool { margin-left: 38px; border: 1px solid var(--border); border-radius
 details.tool summary { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; list-style: none; }
 details.tool summary::-webkit-details-marker { display: none; }
 details.tool.no-body summary { cursor: default; }
-.tool-icon { width: 20px; text-align: center; font-family: var(--mono); color: var(--accent); }
+.tool-icon { width: 20px; display: inline-flex; justify-content: center; color: var(--accent); }
 .tool-verb { font-weight: 600; white-space: nowrap; }
 .tool-target { flex: 1; min-width: 0; color: var(--muted); font-family: var(--mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tool-state { color: var(--muted); font-size: 12px; }
@@ -681,3 +682,16 @@ body[data-theme="kyoto"] .dialog h3::before { content: "印"; display: inline-gr
 body[data-theme="kyoto"] .dialog { border-top: 3px solid var(--accent); }
 body[data-theme="kyoto"] button.primary { background: var(--accent); color: #fbf6ec; border-color: var(--accent); }
 body[data-theme="kyoto"] #preset-list li:hover { box-shadow: inset 2px 0 0 #f2a7b8; }
+
+/* Pictogrammes SVG (icons.js) */
+.ic { width: 15px; height: 15px; flex-shrink: 0; vertical-align: -3px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ic.filled { fill: currentColor; }
+.ic.good { color: var(--add); }
+.ic.bad { color: var(--del); }
+button:has(> .ic) { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.tab-actions button, .side-head button, .diff-head button, .prompt-buttons button { min-width: 30px; min-height: 26px; }
+.tab .close .ic { width: 12px; height: 12px; }
+.side-list .tools .ic, #preset-list .tools .ic, .side-list .star .ic { width: 13px; height: 13px; }
+.todos .ic { width: 13px; height: 13px; vertical-align: -2px; margin-right: 4px; }
+.chat-notice .ic { margin-right: 4px; }
+.seg button .ic { width: 13px; height: 13px; }

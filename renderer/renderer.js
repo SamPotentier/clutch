@@ -225,7 +225,7 @@ function renderTabs() {
     const d = document.createElement('div');
     d.className = 'tab' + (t.key === state.activeKey ? ' active' : '') + (t.exited && t.kind !== 'chat' ? ' exited' : '') + (t.bell ? ' bell' : t.activity ? ' activity' : '');
     d.title = `${shortPath(t.cwd)}${t.command ? ' — ' + t.command : ''}${i < 9 ? `  (⌘${i + 1})` : ''}`;
-    d.innerHTML = `<span class="dot" style="background:${t.color}"></span><span class="title">${esc(t.title)}</span><span class="badge"></span><button class="close" title="Fermer (⌘W)">×</button>`;
+    d.innerHTML = `<span class="dot" style="background:${t.color}"></span><span class="title">${esc(t.title)}</span><span class="badge"></span><button class="close" title="Fermer (⌘W)">${icon('x')}</button>`;
     d.onclick = () => activate(t.key);
     // Au mousedown : les onglets sont souvent redessinés, un auxclick n'arrive pas toujours au même élément
     d.onmousedown = (e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.key); } };
@@ -250,7 +250,7 @@ function renderPresets() {
     li.innerHTML = `<span class="dot" style="background:${p.color}"></span>
       <div class="info"><div class="name">${esc(p.name)}</div><div class="path">${esc(shortPath(p.cwd))}${summary ? ' · ' + esc(summary) : ''}</div></div>
       ${n ? `<span class="count">${n}</span>` : ''}
-      <div class="tools"><button data-a="skill" title="Lancer un skill sur ce projet (⌘J)">⚡</button><button data-a="edit" title="Modifier">✎</button><button data-a="del" title="Supprimer">🗑</button></div>`;
+      <div class="tools"><button data-a="skill" title="Lancer un skill sur ce projet (⌘J)">${icon('zap')}</button><button data-a="edit" title="Modifier">${icon('pencil')}</button><button data-a="del" title="Supprimer">${icon('trash')}</button></div>`;
     li.onclick = (e) => {
       const a = e.target.dataset?.a;
       if (a === 'skill') return openPalette({ mode: 'skills', presetId: p.id });
@@ -260,7 +260,7 @@ function renderPresets() {
     };
     el.appendChild(li);
   }
-  if (!spacePresets().length) el.innerHTML = '<li style="cursor:default;color:var(--muted)">Aucun preset. Clique sur ＋ ou ⇩ pour importer un dossier de projets.</li>';
+  if (!spacePresets().length) el.innerHTML = '<li style="cursor:default;color:var(--muted)">Aucun preset. Clique sur + pour en créer un, ou importe un dossier de projets.</li>';
 }
 
 // Terminaux lancés ensemble par un projet (même groupe), encore ouverts dans l'espace
@@ -293,7 +293,7 @@ function applyLayout() {
   } else {
     terms.style.gridTemplateColumns = terms.style.gridTemplateRows = '';
   }
-  $('#btn-layout').textContent = mode !== 'tabs' ? '▭' : '▦';
+  $('#btn-layout').innerHTML = icon(mode !== 'tabs' ? 'tabs' : 'grid');
   $('#btn-layout').title = g ? (mode !== 'tabs' ? 'Afficher en onglets' : 'Revenir à la disposition du projet') : 'Grille / onglets (⌘G)';
   requestAnimationFrame(() => state.tabs.forEach(fitTab));
 }
@@ -350,7 +350,7 @@ function renderAccounts() {
       <code>${esc(a.dir || '~/.claude')}</code>
       <span class="account-used">${used} projet${used > 1 ? 's' : ''}</span>
       <button data-a="login" title="Ouvre Claude avec ce compte : il demande de se connecter si ce n'est pas encore fait (sinon tape /login)">Se connecter</button>
-      ${a.id ? '<button data-a="del" title="Retirer ce compte de Clutch (le dossier n’est pas supprimé)">×</button>' : ''}`);
+      ${a.id ? `<button data-a="del" title="Retirer ce compte de Clutch (le dossier n’est pas supprimé)">${icon('x')}</button>` : ''}`);
     row.querySelector('.account-name').onchange = (e) => {
       const name = e.target.value.trim() || a.name;
       if (a.id) state.accounts.find((x) => x.id === a.id).name = name;
@@ -415,7 +415,7 @@ function renderSpaceSwitch() {
     // Un point signale de l'activité dans un espace masqué (Claude a fini, demande quelque chose…)
     const busy = a.id !== state.account && state.tabs.some((t) => (t.accountId || '') === a.id && (t.bell || t.activity));
     return `<button data-id="${a.id}" class="${a.id === state.account ? 'on' : ''}" title="${esc(a.dir || '~/.claude')}">${esc(a.name)}${busy ? '<span class="space-dot"></span>' : ''}</button>`;
-  }).join('') + (state.accounts.length ? '' : '<button data-add title="Ajouter un compte (ex. Perso)">＋ Perso</button>');
+  }).join('') + (state.accounts.length ? '' : `<button data-add title="Ajouter un compte (ex. Perso)">${icon('plus')} Perso</button>`);
   document.title = state.accounts.length ? `Clutch — ${accountFor(state.account).name}` : 'Clutch';
 }
 
@@ -478,7 +478,7 @@ function openPresetModal(p) {
   modalSubdirs = [];
   renderLaunch();
   loadModalSubdirs();
-  $('#preset-account').innerHTML = accountOptions(p ? p.accountId : state.account) + '<option value="__add">＋ Ajouter un compte…</option>';
+  $('#preset-account').innerHTML = accountOptions(p ? p.accountId : state.account) + '<option value="__add">+ Ajouter un compte…</option>';
   pickedColor = p?.color || COLORS[state.presets.length % COLORS.length];
   renderColors();
   $('#modal').classList.remove('hidden');
@@ -520,11 +520,11 @@ function renderLaunch() {
     const row = document.createElement('div');
     row.className = 'pane-row';
     row.innerHTML = `
-      <select class="pane-dir" title="Dossier">${dirs.map((d) => `<option value="${esc(d)}">📁 ${d ? esc(d) : 'racine'}</option>`).join('')}</select>
+      <select class="pane-dir" title="Dossier">${dirs.map((d) => `<option value="${esc(d)}">${d ? esc(d) + '/' : 'racine'}</option>`).join('')}</select>
       <select class="pane-kind">${PANE_KINDS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
       <input class="pane-cmd${x.kind ? '' : ' hidden'}" spellcheck="false" placeholder="${x.kind === 'claude' ? 'options, ex. --model sonnet' : 'npm run dev'}">
-      <button type="button" class="pane-up" title="Monter (le premier terminal est le principal)"${i ? '' : ' disabled'}>↑</button>
-      <button type="button" class="pane-del" title="Retirer"${modalPanes.length === 1 ? ' disabled' : ''}>×</button>`;
+      <button type="button" class="pane-up" title="Monter (le premier terminal est le principal)"${i ? '' : ' disabled'}>${icon('arrow-up')}</button>
+      <button type="button" class="pane-del" title="Retirer"${modalPanes.length === 1 ? ' disabled' : ''}>${icon('x')}</button>`;
     row.querySelector('.pane-dir').value = x.dir;
     row.querySelector('.pane-kind').value = x.kind;
     row.querySelector('.pane-cmd').value = x.arg;
@@ -674,11 +674,11 @@ function renderSkills() {
       li.title = s.description;
       const project = s.project ? presetFor(s.project)?.name : '';
       if (s.fav) li.className = 'fav';
-      li.innerHTML = `<span class="skill-icon">⚡</span>
+      li.innerHTML = `<span class="skill-icon">${icon('zap')}</span>
         <div class="info"><div class="name">${esc(s.name)}</div><div class="path">${esc(s.description || s.template)}</div></div>
         ${project ? `<span class="tag">${esc(project)}</span>` : ''}
-        <div class="tools"><button data-a="edit" title="Modifier le modèle">✎</button></div>
-        <button class="star" data-a="fav" title="${s.fav ? 'Retirer des favoris' : 'Ajouter aux favoris'}">${s.fav ? '★' : '☆'}</button>`;
+        <div class="tools"><button data-a="edit" title="Modifier le modèle">${icon('pencil')}</button></div>
+        <button class="star" data-a="fav" title="${s.fav ? 'Retirer des favoris' : 'Ajouter aux favoris'}">${icon('star', s.fav ? 'filled' : '')}</button>`;
       li.onclick = (e) => {
         const a = e.target.dataset?.a;
         if (a === 'fav') return toggleFav(s);
@@ -996,7 +996,7 @@ function renderDiff(t, files) {
       }
     }
     html += `<div class="dfile${collapsed ? ' collapsed' : ''}" id="dfile-${i}" data-path="${esc(f.path)}">
-      <div class="dfile-head"><span class="caret">▾</span><span class="st st-${f.status}">${f.status}</span>
+      <div class="dfile-head"><span class="caret">${icon('chevron-down')}</span><span class="st st-${f.status}">${f.status}</span>
         <span class="dpath" title="${esc(f.from ? f.from + ' → ' + f.path : f.path)}">${name}</span>
         <span class="dstat"><span class="add">+${f.add}</span> <span class="del">−${f.del}</span></span></div>
       <table class="dt"><colgroup><col class="c-ln"><col class="c-ln"><col></colgroup>${rows}</table></div>`;
@@ -1231,12 +1231,12 @@ document.addEventListener('click', (e) => { if (!$('#snippets').contains(e.targe
 
 function renderSnippets() {
   const el = $('#snippets');
-  el.innerHTML = state.prompts.length ? '' : '<div class="empty">Aucun prompt enregistré. Écris un prompt puis clique sur ★.</div>';
+  el.innerHTML = state.prompts.length ? '' : '<div class="empty">Aucun prompt enregistré. Écris un prompt puis clique sur l’étoile.</div>';
   for (const s of state.prompts) {
     const d = document.createElement('div');
     d.className = 'item';
     d.title = s.text;
-    d.innerHTML = `<span>${esc(s.text.split('\n')[0])}</span><button title="Supprimer">×</button>`;
+    d.innerHTML = `<span>${esc(s.text.split('\n')[0])}</span><button title="Supprimer">${icon('x')}</button>`;
     d.onclick = () => { $('#prompt').value = s.text; autoGrow(); el.classList.add('hidden'); $('#prompt').focus(); };
     d.querySelector('button').onclick = (e) => {
       e.stopPropagation();
@@ -1280,7 +1280,7 @@ function renderPalette() {
   const skillItems = allSkills()
     .filter((s) => !paletteCtx.presetId || !s.project || s.project === state.presets.find((p) => p.id === paletteCtx.presetId)?.cwd)
     .sort((a, b) => b.fav - a.fav)
-    .map((s) => ({ kind: s.fav ? '★ Skill' : 'Skill', label: s.name, sub: s.invoke !== s.name ? s.invoke : s.source, color: 'var(--accent)', run: () => openSkillRun(s, paletteCtx.presetId) }));
+    .map((s) => ({ kind: s.fav ? 'Skill favori' : 'Skill', label: s.name, sub: s.invoke !== s.name ? s.invoke : s.source, color: 'var(--accent)', run: () => openSkillRun(s, paletteCtx.presetId) }));
   const pickItems = spacePresets().map((p) => ({ kind: 'Lancer ici', label: p.name, sub: shortPath(p.cwd), color: p.color, run: () => paletteCtx.onPick(p) }));
   paletteItems = (paletteCtx.mode === 'pick' ? pickItems : paletteCtx.mode === 'skills' ? skillItems : [
     ...spacePresets().map((p) => ({ kind: 'Lancer', label: p.name, sub: shortPath(p.cwd), color: p.color, run: () => launchPreset(p) })),

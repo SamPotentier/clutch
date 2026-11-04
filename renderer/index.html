@@ -21,8 +21,8 @@
         <div class="side-head">
           <span>Projets</span>
           <div class="side-actions">
-            <button id="btn-import" title="Importer les sous-dossiers d'un dossier">⇩</button>
-            <button id="btn-add" title="Nouveau preset">＋</button>
+            <button id="btn-import" data-icon="import" title="Importer les sous-dossiers d'un dossier"></button>
+            <button id="btn-add" data-icon="plus" title="Nouveau preset"></button>
           </div>
         </div>
         <input id="preset-filter" placeholder="Filtrer…" spellcheck="false">
@@ -32,8 +32,8 @@
         <div class="side-head">
           <span>Skills</span>
           <div class="side-actions">
-            <button id="btn-skills-rescan" title="Rescanner les skills">↻</button>
-            <button id="btn-skill-add" title="Nouveau skill personnalisé">＋</button>
+            <button id="btn-skills-rescan" data-icon="refresh" title="Rescanner les skills"></button>
+            <button id="btn-skill-add" data-icon="plus" title="Nouveau skill personnalisé"></button>
           </div>
         </div>
         <input id="skill-filter" placeholder="Filtrer…" spellcheck="false">
@@ -49,10 +49,10 @@
       <div id="tabbar">
         <div id="tabs"></div>
         <div class="tab-actions">
-          <button id="btn-diff" title="Afficher les modifications (⌘D)">±</button>
-          <button id="btn-layout" title="Basculer onglets / grille">▦</button>
-          <button id="btn-accounts" title="Comptes Claude">👤</button>
-          <button id="btn-theme" title="Thème et fond">◐</button>
+          <button id="btn-diff" data-icon="diff" title="Afficher les modifications (⌘D)"></button>
+          <button id="btn-layout" title="Basculer onglets / grille"></button>
+          <button id="btn-accounts" data-icon="user" title="Comptes Claude"></button>
+          <button id="btn-theme" data-icon="palette" title="Thème et fond"></button>
           <div id="theme-pop" class="popover hidden"></div>
         </div>
       </div>
@@ -73,8 +73,8 @@
             <option value="all">Tous les terminaux</option>
           </select>
           <div class="prompt-buttons">
-            <button id="btn-snippets" title="Prompts enregistrés">☰</button>
-            <button id="btn-save-snippet" title="Enregistrer ce prompt">★</button>
+            <button id="btn-snippets" data-icon="list" title="Prompts enregistrés"></button>
+            <button id="btn-save-snippet" data-icon="star" title="Enregistrer ce prompt"></button>
             <button id="btn-send" class="primary">Envoyer</button>
           </div>
         </div>
@@ -92,9 +92,9 @@
               <option value="head">Tout le non-commité (HEAD)</option>
             </select>
             <label class="check" title="Ouvrir automatiquement quand des fichiers changent"><input type="checkbox" id="diff-auto"> auto</label>
-            <button id="diff-collapse" title="Tout replier / déplier">⇕</button>
-            <button id="diff-refresh" title="Rafraîchir">↻</button>
-            <button id="diff-close" title="Fermer (⌘D)">×</button>
+            <button id="diff-collapse" data-icon="fold" title="Tout replier / déplier"></button>
+            <button id="diff-refresh" data-icon="refresh" title="Rafraîchir"></button>
+            <button id="diff-close" data-icon="x" title="Fermer (⌘D)"></button>
           </div>
         </div>
         <div id="diff-files"></div>
@@ -118,17 +118,17 @@
         <div class="launch-head">Au lancement <small>— ce qui s'ouvre quand tu cliques sur le projet</small></div>
         <div id="launch-panes"></div>
         <div class="launch-add">
-          <button type="button" id="btn-add-pane">＋ Terminal</button>
-          <button type="button" id="btn-add-subs" title="Ajoute un terminal dans chaque sous-dossier (front, back…)">＋ Un par sous-dossier</button>
+          <button type="button" id="btn-add-pane" data-icon="plus">Terminal</button>
+          <button type="button" id="btn-add-subs" data-icon="folder" title="Ajoute un terminal dans chaque sous-dossier (front, back…)">Un par sous-dossier</button>
         </div>
         <div class="launch-head">Disposition</div>
         <div id="launch-layout" class="seg">
-          <button type="button" data-l="tabs">▭ Onglets</button>
-          <button type="button" data-l="cols">◫ Côte à côte</button>
-          <button type="button" data-l="rows">⬒ Empilés</button>
-          <button type="button" data-l="grid">▦ Grille</button>
-          <button type="button" data-l="main-left" title="Le premier terminal à gauche, les autres empilés à droite">◧ 1 + pile</button>
-          <button type="button" data-l="main-top" title="Le premier terminal en haut, les autres côte à côte en bas">⬓ 1 + rangée</button>
+          <button type="button" data-l="tabs" data-icon="tabs">Onglets</button>
+          <button type="button" data-l="cols" data-icon="cols">Côte à côte</button>
+          <button type="button" data-l="rows" data-icon="rows">Empilés</button>
+          <button type="button" data-l="grid" data-icon="grid">Grille</button>
+          <button type="button" data-l="main-left" title="Le premier terminal à gauche, les autres empilés à droite" data-icon="main-left">1 + pile</button>
+          <button type="button" data-l="main-top" title="Le premier terminal en haut, les autres côte à côte en bas" data-icon="main-top">1 + rangée</button>
         </div>
       </div>
       <label>Compte Claude<select name="account" id="preset-account"></select></label>
@@ -201,6 +201,7 @@
   <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
   <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
   <script src="../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
+  <script src="icons.js"></script>
   <script src="renderer.js"></script>
   <script src="chat.js"></script>
 </body>

@@ -89,9 +89,9 @@ async function openChat({ name, cwd, color, presetId, accountId = state.account,
     <div class="chat-bar">
       <span class="chat-status"></span>
       <select class="chat-mode" title="Ce que Claude peut faire sans demander">${PERMISSION_MODES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
-      <button class="chat-stop hidden" title="Interrompre Claude">■ Stop</button>
-      <button class="chat-resume" title="Reprendre une conversation précédente (/resume)">↺ Reprendre</button>
-      <button class="chat-term" title="Continuer cette session dans un terminal classique">⌨ Terminal</button>
+      <button class="chat-stop hidden" title="Interrompre Claude">${icon('stop')} Stop</button>
+      <button class="chat-resume" title="Reprendre une conversation précédente (/resume)">${icon('history')} Reprendre</button>
+      <button class="chat-term" title="Continuer cette session dans un terminal classique">${icon('terminal')} Terminal</button>
     </div>
     <div class="chat-scroll"><div class="chat-log"></div></div>`);
   tab.log = tab.wrap.querySelector('.chat-log');
@@ -194,7 +194,7 @@ api.onChatEvent((id, ev) => {
   } else if (ev.type === 'system' && ev.subtype === 'compact_boundary') {
     const m = ev.compact_metadata || {};
     const k = (n) => `${Math.round(n / 1000)}k`;
-    addNotice(tab, `🗜 Conversation compactée${m.pre_tokens ? ` (${k(m.pre_tokens)} → ${k(m.post_tokens)} tokens)` : ''}.`);
+    addNotice(tab, `${icon('shrink')} Conversation compactée${m.pre_tokens ? ` (${k(m.pre_tokens)} → ${k(m.post_tokens)} tokens)` : ''}.`);
   } else if (ev.type === 'user' && typeof ev.message?.content === 'string') {
     onLocalCommandOutput(tab, ev.message.content);
   } else if (ev.type === 'stream_event') onStream(tab, ev.event);
@@ -267,7 +267,7 @@ function onToolResults(tab, msg) {
     if (!card) continue;
     const text = Array.isArray(r.content) ? r.content.map((c) => c.text || '').join('\n') : String(r.content ?? '');
     card.classList.add(r.is_error ? 'err' : 'ok');
-    card.querySelector('.tool-state').textContent = r.is_error ? '✗' : '✓';
+    card.querySelector('.tool-state').innerHTML = icon(r.is_error ? 'x' : 'check', r.is_error ? 'bad' : 'good');
     if (text.trim() && card.dataset.showOutput) {
       const out = text.length > 4000 ? text.slice(0, 4000) + '\n…' : text;
       card.querySelector('.tool-body').insertAdjacentHTML('beforeend', `<pre class="tool-out">${esc(out)}</pre>`);
@@ -290,7 +290,7 @@ function onResult(tab, ev) {
     tab.log.innerHTML = '';
     tab.tools.clear();
     tab.blocks = [];
-    addNotice(tab, '🧹 Conversation effacée : Claude repart de zéro.');
+    addNotice(tab, `${icon('eraser')} Conversation effacée : Claude repart de zéro.`);
   }
   tab.lastSent = '';
   // On ne signale que les refus automatiques, pas ceux que l'utilisateur a choisis
@@ -316,7 +316,7 @@ function onControlRequest(tab, ev) {
   }
   const input = req.input || {};
   if (req.tool_name === 'AskUserQuestion') return askUser(tab, ev.request_id, input);
-  const [icon, verb, target] = toolSummary(tab, req.tool_name, input);
+  const [ico, verb, target] = toolSummary(tab, req.tool_name, input);
   let detail = '';
   if (req.tool_name === 'Bash') detail = `<pre class="tool-cmd">$ ${esc(input.command || '')}</pre>`;
   else if (req.tool_name === 'Edit') detail = miniDiff(input.old_string, input.new_string);
@@ -324,7 +324,7 @@ function onControlRequest(tab, ev) {
   else if (req.tool_name === 'WebFetch') detail = `<div class="tool-prompt">${esc(input.url || '')}</div>`;
   const always = (req.permission_suggestions || []).length > 0;
   const card = el('div', 'perm', `
-    <div class="perm-head"><span class="tool-icon">${icon}</span><b>Claude demande l’autorisation</b> · ${esc(verb)} <span class="tool-target">${esc(target)}</span></div>
+    <div class="perm-head"><span class="tool-icon">${ico}</span><b>Claude demande l’autorisation</b> · ${esc(verb)} <span class="tool-target">${esc(target)}</span></div>
     ${detail}
     <div class="perm-actions">
       <button class="primary" data-a="allow">Autoriser</button>
@@ -344,7 +344,7 @@ function onControlRequest(tab, ev) {
       });
     }
     card.classList.add('answered', a === 'deny' ? 'denied' : 'allowed');
-    card.querySelector('.perm-actions').innerHTML = `<span>${a === 'deny' ? '✗ Refusé' : a === 'always' ? '✓ Toujours autorisé dans ce projet' : '✓ Autorisé'}</span>`;
+    card.querySelector('.perm-actions').innerHTML = `<span>${a === 'deny' ? icon('x', 'bad') + ' Refusé' : icon('check', 'good') + (a === 'always' ? ' Toujours autorisé dans ce projet' : ' Autorisé')}</span>`;
     setBusy(tab, true, 'Claude travaille…');
     if (state.activeKey === tab.key) $('#prompt').focus();
   };
@@ -423,7 +423,7 @@ function addChoiceCard(tab, { title, questions, cls = '', other = 'Autre répons
   const finish = () => {
     const answers = questions.map((_, qi) => answerOf(qi));
     card.classList.add('answered');
-    card.innerHTML = `<div class="choice-title">${esc(title)}</div>${questions.map((q, i) => `<div class="choice-answer">✓ ${q.header ? `<b>${esc(q.header)}</b> : ` : ''}${esc(answers[i])}</div>`).join('')}`;
+    card.innerHTML = `<div class="choice-title">${esc(title)}</div>${questions.map((q, i) => `<div class="choice-answer">${icon('check', 'good')} ${q.header ? `<b>${esc(q.header)}</b> : ` : ''}${esc(answers[i])}</div>`).join('')}`;
     focusActive();
     onSubmit(answers);
   };
@@ -591,7 +591,7 @@ async function resumeSession(tab, id) {
   }
   // Les outils sans résultat dans l'historique ne doivent pas tourner indéfiniment
   tab.log.querySelectorAll('.tool-state .spin').forEach((n) => { n.parentElement.textContent = '·'; });
-  addNotice(tab, '↺ Conversation reprise. Écris la suite ci-dessous.');
+  addNotice(tab, `${icon('history')} Conversation reprise. Écris la suite ci-dessous.`);
   await startChatProcess(tab, id);
   tab.scroller.scrollTop = tab.scroller.scrollHeight;
 }
@@ -600,7 +600,7 @@ function renderChatBar(tab) {
   const status = tab.wrap.querySelector('.chat-status');
   status.innerHTML = tab.busy
     ? `<span class="pulse"></span>${esc(tab.busyLabel || 'Claude travaille…')}`
-    : `<span class="ready"></span>${tab.exited ? 'Session en pause' : 'Prêt'}${tab.model ? ` · <button class="link model-link" title="Changer de modèle">${esc(tab.model.replace(/^claude-/, ''))} ▾</button>` : ''}`;
+    : `<span class="ready"></span>${tab.exited ? 'Session en pause' : 'Prêt'}${tab.model ? ` · <button class="link model-link" title="Changer de modèle">${esc(tab.model.replace(/^claude-/, ''))} ${icon('chevron-down')}</button>` : ''}`;
   status.querySelector('.model-link')?.addEventListener('click', () => openModelPicker(tab));
   tab.wrap.querySelector('.chat-stop').classList.toggle('hidden', !tab.busy);
 }
@@ -654,18 +654,18 @@ function relPath(tab, p) {
 function toolSummary(tab, name, input) {
   const f = relPath(tab, input.file_path || input.notebook_path);
   switch (name) {
-    case 'Read': return ['📖', 'Lecture', f];
-    case 'Edit': case 'MultiEdit': case 'NotebookEdit': return ['✏️', 'Modification', f];
-    case 'Write': return ['📝', 'Écriture', f];
-    case 'Bash': return ['›_', 'Commande', input.description || input.command || ''];
-    case 'Grep': return ['🔎', 'Recherche', input.pattern ? `« ${input.pattern} »` : ''];
-    case 'Glob': return ['🗂', 'Fichiers', input.pattern || ''];
-    case 'WebFetch': return ['🌐', 'Page web', input.url || ''];
-    case 'WebSearch': return ['🌐', 'Recherche web', input.query || ''];
-    case 'Task': case 'Agent': return ['🤖', 'Sous-agent', input.description || ''];
-    case 'TodoWrite': return ['☑️', 'Plan de travail', ''];
-    case 'Skill': return ['⚡', 'Skill', input.skill || input.command || ''];
-    default: return ['🔧', name.replace(/^mcp__[^_]+__/, ''), ''];
+    case 'Read': return [icon('read'), 'Lecture', f];
+    case 'Edit': case 'MultiEdit': case 'NotebookEdit': return [icon('edit'), 'Modification', f];
+    case 'Write': return [icon('write'), 'Écriture', f];
+    case 'Bash': return [icon('terminal'), 'Commande', input.description || input.command || ''];
+    case 'Grep': return [icon('search'), 'Recherche', input.pattern ? `« ${input.pattern} »` : ''];
+    case 'Glob': return [icon('files'), 'Fichiers', input.pattern || ''];
+    case 'WebFetch': return [icon('globe'), 'Page web', input.url || ''];
+    case 'WebSearch': return [icon('globe'), 'Recherche web', input.query || ''];
+    case 'Task': case 'Agent': return [icon('bot'), 'Sous-agent', input.description || ''];
+    case 'TodoWrite': return [icon('todos'), 'Plan de travail', ''];
+    case 'Skill': return [icon('zap'), 'Skill', input.skill || input.command || ''];
+    default: return [icon('wrench'), name.replace(/^mcp__[^_]+__/, ''), ''];
   }
 }
 
@@ -680,9 +680,9 @@ function miniDiff(oldS, newS) {
 function addToolCard(tab, c) {
   if (c.name === 'AskUserQuestion') return; // affiché comme carte de choix interactive
   const input = c.input || {};
-  const [icon, verb, target] = toolSummary(tab, c.name, input);
+  const [ico, verb, target] = toolSummary(tab, c.name, input);
   const card = el('details', 'tool', `
-    <summary><span class="tool-icon">${icon}</span><span class="tool-verb">${esc(verb)}</span><span class="tool-target">${esc(target)}</span><span class="tool-state"><span class="spin"></span></span></summary>
+    <summary><span class="tool-icon">${ico}</span><span class="tool-verb">${esc(verb)}</span><span class="tool-target">${esc(target)}</span><span class="tool-state"><span class="spin"></span></span></summary>
     <div class="tool-body"></div>`);
   const body = card.querySelector('.tool-body');
   if (c.name === 'Edit') body.innerHTML = miniDiff(input.old_string, input.new_string);
@@ -692,8 +692,8 @@ function addToolCard(tab, c) {
     body.innerHTML = `<pre class="tool-cmd">$ ${esc(input.command || '')}</pre>`;
     card.dataset.showOutput = '1';
   } else if (c.name === 'TodoWrite') {
-    const mark = { completed: '☑', in_progress: '◐', pending: '☐' };
-    body.innerHTML = `<ul class="todos">${(input.todos || []).map((t) => `<li class="${t.status}">${mark[t.status] || '☐'} ${esc(t.content)}</li>`).join('')}</ul>`;
+    const mark = { completed: icon('box-done'), in_progress: icon('box-doing'), pending: icon('box-todo') };
+    body.innerHTML = `<ul class="todos">${(input.todos || []).map((t) => `<li class="${t.status}">${mark[t.status] || mark.pending} ${esc(t.content)}</li>`).join('')}</ul>`;
     card.open = true;
   } else if (c.name === 'Task' || c.name === 'Agent') {
     body.innerHTML = `<div class="tool-prompt">${esc(input.prompt || '').slice(0, 1500)}</div>`;
