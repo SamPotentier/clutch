@@ -443,44 +443,69 @@ ipcMain.handle('bg:read', (_e, file) => {
     return null;
   }
 });
-// Reconstruire et relancer : `npm run app` dans le dossier des sources, puis on rouvre l'app installée
-function sourceDir() {
-  if (!app.isPackaged) return __dirname;
-  try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'source.json'), 'utf8')).source; } catch { return null; }
+// Mises à jour : l'app installée connaît son dossier de sources et le commit dont elle est issue (source.json).
+// Une mise à jour est disponible si le dépôt distant a de nouveaux commits, ou si les sources locales ont avancé.
+function buildInfo() {
+  if (!app.isPackaged) return { source: __dirname, commit: null };
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'source.json'), 'utf8')); } catch { return {}; }
 }
-ipcMain.handle('app:can-rebuild', () => {
-  const dir = sourceDir();
-  return !!dir && fs.existsSync(path.join(dir, 'build', 'make-app.sh'));
-});
+const devCommit = !app.isPackaged ? git(__dirname, ['rev-parse', 'HEAD']).then((c) => c?.trim()) : null;
+let lastFetch = 0;
+
+async function updateStatus() {
+  const { source: dir, commit } = buildInfo();
+  if (!dir || !fs.existsSync(path.join(dir, 'build', 'make-app.sh'))) return { available: false };
+  const built = commit || (await devCommit);
+  if (Date.now() - lastFetch > 2 * 60000) {
+    lastFetch = Date.now();
+    await new Promise((r) => execFile('git', ['fetch', '--quiet'], { cwd: dir, timeout: 20000 }, () => r()));
+  }
+  const log = async (range) => ((await git(dir, ['log', '--format=%s', range])) || '').split('\n').filter(Boolean);
+  const remote = (await git(dir, ['rev-parse', '--abbrev-ref', '@{u}'])) ? await log('HEAD..@{u}') : [];
+  const local = built ? await log(`${built}..HEAD`) : [];
+  return { available: remote.length + local.length > 0, remote, local };
+}
+
+ipcMain.handle('app:update-status', () => updateStatus());
 ipcMain.handle('app:rebuild', async (_e, openCount) => {
-  const dir = sourceDir();
+  const dir = buildInfo().source;
+  const st = await updateStatus();
+  const changes = [...st.remote || [], ...st.local || []];
   const { response } = await dialog.showMessageBox(win, {
-    type: 'question', buttons: ['Reconstruire et relancer', 'Annuler'], defaultId: 0, cancelId: 1,
-    message: 'Reconstruire et relancer Clutch ?',
-    detail: `Clutch est reconstruit depuis ${dir.replace(os.homedir(), '~')}, puis relancé.`
+    type: 'question', buttons: ['Mettre à jour et relancer', 'Annuler'], defaultId: 0, cancelId: 1,
+    message: 'Mettre à jour Clutch ?',
+    detail: (changes.length ? `Nouveautés :\n${changes.slice(0, 12).map((c) => `• ${c}`).join('\n')}${changes.length > 12 ? `\n… et ${changes.length - 12} autres` : ''}\n\n` : '')
+      + `Clutch est ${st.remote?.length ? 'mis à jour depuis le dépôt, puis ' : ''}reconstruit depuis ${dir.replace(os.homedir(), '~')} et relancé.`
       + (openCount ? ` ${openCount} terminal${openCount > 1 ? 'aux ouverts seront fermés' : ' ouvert sera fermé'} au moment de la relance ; les conversations Claude restent reprenables.` : ''),
   });
   if (response !== 0) return { cancelled: true };
   const PATH = await getLoginPath();
-  return new Promise((resolve) => {
-    let log = '';
-    const child = spawn('npm', ['run', 'app'], { cwd: dir, env: { ...process.env, PATH } });
+  let log = '';
+  const run = (cmd, args) => new Promise((resolve) => {
+    log += `\n$ ${cmd} ${args.join(' ')}\n`;
+    const child = spawn(cmd, args, { cwd: dir, env: { ...process.env, PATH } });
     const onData = (d) => { log += d; win?.webContents.send('app:rebuild-log', String(d)); };
     child.stdout.on('data', onData);
     child.stderr.on('data', onData);
-    child.on('error', (err) => { log += err.message; });
-    child.on('close', async (code) => {
-      if (code !== 0) {
-        resolve({ ok: false });
-        await dialog.showMessageBox(win, { type: 'error', message: 'La reconstruction a échoué', detail: log.trim().split('\n').slice(-25).join('\n') });
-        return;
-      }
-      resolve({ ok: true });
-      spawn('/bin/sh', ['-c', 'sleep 1; open -n /Applications/Clutch.app'], { detached: true, stdio: 'ignore' }).unref();
-      quitting = true;
-      app.quit();
-    });
+    child.on('error', (err) => { log += err.message; resolve(1); });
+    child.on('close', resolve);
   });
+  const fail = async (what) => {
+    await dialog.showMessageBox(win, { type: 'error', message: what, detail: log.trim().split('\n').slice(-25).join('\n') });
+    return { ok: false };
+  };
+  if (st.remote?.length) {
+    const before = (await git(dir, ['rev-parse', 'HEAD']))?.trim();
+    if (await run('git', ['pull', '--ff-only'])) return fail('La récupération de la mise à jour a échoué');
+    // Dépendances modifiées : on les réinstalle avant de reconstruire
+    const changed = (await git(dir, ['diff', '--name-only', before, 'HEAD'])) || '';
+    if (/^package(-lock)?\.json$/m.test(changed) && await run('npm', ['install'])) return fail('L’installation des dépendances a échoué');
+  }
+  if (await run('npm', ['run', 'app'])) return fail('La reconstruction a échoué');
+  spawn('/bin/sh', ['-c', 'sleep 1; open -n /Applications/Clutch.app'], { detached: true, stdio: 'ignore' }).unref();
+  quitting = true;
+  app.quit();
+  return { ok: true };
 });
 ipcMain.handle('usage:get', (_e, configDir) => claudeUsage(configDir));
 ipcMain.handle('fs:subdirs', (_e, dir) => {

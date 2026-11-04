@@ -1631,24 +1631,38 @@ document.addEventListener('click', (e) => {
 window.addEventListener('focus', () => refreshUsage());
 setInterval(() => refreshUsage(true), 5 * 60000);
 
-/* ---------- Reconstruire et relancer ---------- */
+/* ---------- Mises à jour ---------- */
 
-api.canRebuild().then((ok) => $('#btn-rebuild').classList.toggle('hidden', !ok));
+// Le bouton n'apparaît que s'il y a du nouveau : commits sur le dépôt distant, ou sources locales plus récentes que l'app
+let updating = false;
+async function checkUpdate() {
+  if (updating) return;
+  const st = await api.updateStatus();
+  const b = $('#btn-rebuild');
+  b.classList.toggle('hidden', !st.available);
+  const n = (st.remote?.length || 0) + (st.local?.length || 0);
+  if (st.available) b.title = `Mise à jour disponible (${n} nouveauté${n > 1 ? 's' : ''}) :\n${[...st.remote, ...st.local].slice(0, 8).map((c) => `• ${c}`).join('\n')}`;
+}
+checkUpdate();
+setInterval(checkUpdate, 5 * 60000);
+window.addEventListener('focus', () => checkUpdate());
+
 $('#btn-rebuild').onclick = async () => {
   const b = $('#btn-rebuild');
-  if (b.classList.contains('busy')) return;
+  if (updating) return;
+  updating = true;
   b.classList.add('busy');
-  b.title = 'Reconstruction en cours…';
   const res = await api.rebuild(state.tabs.filter((t) => !t.exited).length);
   // En cas de succès l'app se ferme et se relance ; sinon on rend la main
   if (!res?.ok) {
+    updating = false;
     b.classList.remove('busy');
-    b.title = 'Reconstruire et relancer Clutch';
+    checkUpdate();
   }
 };
 api.onRebuildLog((text) => {
   const line = text.trim().split('\n').pop();
-  if (line) $('#btn-rebuild').title = `Reconstruction en cours… ${line.slice(0, 120)}`;
+  if (line) $('#btn-rebuild').title = `Mise à jour en cours… ${line.slice(0, 120)}`;
 });
 
 /* ---------- Init ---------- */

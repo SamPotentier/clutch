@@ -24,8 +24,8 @@ npx --yes @electron/packager@20.3.0 . "Clutch" \
 
 APP="dist/Clutch-darwin-$(uname -m)/Clutch.app"
 chmod +x "$APP"/Contents/Resources/app/node_modules/node-pty/prebuilds/darwin-*/spawn-helper
-# Dossier des sources, pour le bouton « Reconstruire et relancer » de l'app
-printf '{"source": "%s"}\n' "$PWD" > "$APP/Contents/Resources/app/source.json"
+# Dossier des sources et commit construit, pour détecter et appliquer les mises à jour depuis l'app
+printf '{"source": "%s", "commit": "%s"}\n' "$PWD" "$(git rev-parse HEAD 2>/dev/null)" > "$APP/Contents/Resources/app/source.json"
 rm -rf "/Applications/Clutch.app" "/Applications/Terminal Hub.app" dist/Terminal\ Hub-darwin-*(N)
 cp -R "$APP" /Applications/
 echo "Installé : /Applications/Clutch.app"

@@ -752,6 +752,9 @@ body.dragging-term .xterm { pointer-events: none; }
 #tabs.drop-target { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: var(--r); }
 .tab.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
 
-/* Bouton « Reconstruire et relancer » : tourne pendant la reconstruction */
-#btn-rebuild.busy { color: var(--accent); border-color: var(--accent); cursor: progress; }
+/* Bouton « Mise à jour » : visible seulement quand il y a du nouveau, tourne pendant la reconstruction */
+#btn-rebuild { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; padding: 4px 12px; animation: update-pulse 2.4s ease-in-out infinite; }
+#btn-rebuild:hover { filter: brightness(1.1); }
+@keyframes update-pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); } }
+#btn-rebuild.busy { cursor: progress; animation: none; opacity: .85; }
 #btn-rebuild.busy .ic { animation: spin 1.1s linear infinite; }
