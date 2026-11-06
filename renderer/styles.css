@@ -549,7 +549,7 @@ button.link { border: none; background: none; color: var(--accent); padding: 0; 
 .seg { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; width: fit-content; }
 .seg button { border: 0; border-radius: 0; background: transparent; font-size: 12px; padding: 5px 8px; white-space: nowrap; }
 .seg button + button { border-left: 1px solid var(--border); }
-.seg button.on { background: var(--accent); color: var(--bg); }
+.seg button.on { background: var(--accent); color: var(--on-accent); }
 .seg.disabled { opacity: .45; pointer-events: none; }
 #preset-form { width: 580px; max-height: 84vh; overflow-y: auto; }
 
@@ -774,3 +774,5 @@ body.dragging-term .xterm { pointer-events: none; }
 
 /* Renommage d'un onglet */
 .tab-rename { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 4px; padding: 0 4px; margin: -1px 0; min-width: 0; outline: none; }
+#snd-mac { flex: 1; }
+#snd-mac.on { border-color: var(--accent); color: var(--text); }

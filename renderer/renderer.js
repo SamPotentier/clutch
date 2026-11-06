@@ -264,9 +264,12 @@ const SOUNDS = {
   arcade: { label: 'Arcade', notes: [[988, 0, .09, 'square'], [1319, .09, .22, 'square']] },
   doux: { label: 'Doux', notes: [[523.25, 0, .9, 'triangle'], [659.25, .18, 1, 'triangle']] },
 };
+// Sons d'alerte du Mac, avec leur nom français (« Brise » = Blow.aiff)
+const MAC_SOUNDS = { Blow: 'Brise', Hero: 'Héroïne', Glass: 'Cristal', Pop: 'Bulle', Tink: 'Boop', Ping: 'Sonar', Bottle: 'Galet', Funk: 'Funky', Morse: 'Pong', Purr: 'Pincement', Frog: 'Saut', Basso: 'Mezzo', Sosumi: 'Sonumi', Submarine: 'Submersible' };
 let audioCtx = null;
 
 function playSound(name, volume = state.sound.volume) {
+  if (name?.startsWith('mac:')) return api.playSystemSound(name.slice(4), volume / 100);
   const snd = SOUNDS[name];
   if (!snd) return;
   audioCtx ||= new AudioContext();
@@ -1423,6 +1426,10 @@ function renderThemePop() {
       ${b.kind === 'image' ? `<label class="tp-row">Flou <input type="range" id="bg-blur" min="0" max="30" value="${b.blur}"><span>${b.blur}px</span></label>` : ''}` : ''}
     <div class="tp-head">Son quand Claude a fini</div>
     <div class="seg tp-sound">${[['', 'Aucun'], ...Object.entries(SOUNDS).map(([k, v]) => [k, v.label])].map(([k, l]) => `<button data-sound="${k}" class="${state.sound.name === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <label class="tp-row">Sons du Mac <select id="snd-mac" class="${state.sound.name?.startsWith('mac:') ? 'on' : ''}">
+      <option value="">—</option>
+      ${Object.entries(MAC_SOUNDS).sort((a, b) => a[1].localeCompare(b[1])).map(([k, l]) => `<option value="mac:${k}"${state.sound.name === `mac:${k}` ? ' selected' : ''}>${l}</option>`).join('')}
+    </select></label>
     ${state.sound.name ? `<label class="tp-row">Volume <input type="range" id="snd-vol" min="5" max="100" value="${state.sound.volume}"><span>${state.sound.volume}%</span></label>` : ''}`;
 }
 
@@ -1484,6 +1491,13 @@ $('#theme-pop').addEventListener('input', (e) => {
   if (e.target.id === 'bg-color') state.bg.color = v;
   if (e.target.id === 'bg-opacity') state.bg.opacity = +v;
   if (e.target.id === 'bg-blur') state.bg.blur = +v;
+  if (e.target.id === 'snd-mac') {
+    if (!v) return;
+    state.sound.name = v;
+    playSound(v);
+    renderThemePop();
+    return persist();
+  }
   if (e.target.id === 'snd-vol') {
     state.sound.volume = +v;
     e.target.nextElementSibling.textContent = `${v}%`;

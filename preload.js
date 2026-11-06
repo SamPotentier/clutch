@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   saveData: (data) => ipcRenderer.invoke('data:save', data),
   pickFolder: () => ipcRenderer.invoke('dialog:folder'),
   subdirs: (dir) => ipcRenderer.invoke('fs:subdirs', dir),
+  playSystemSound: (name, volume) => ipcRenderer.send('sound:system', name, volume),
   updateStatus: () => ipcRenderer.invoke('app:update-status'),
   rebuild: (openCount) => ipcRenderer.invoke('app:rebuild', openCount),
   onRebuildLog: (cb) => ipcRenderer.on('app:rebuild-log', (_e, text) => cb(text)),

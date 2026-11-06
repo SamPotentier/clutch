@@ -507,6 +507,12 @@ ipcMain.handle('app:rebuild', async (_e, openCount) => {
   app.quit();
   return { ok: true };
 });
+// Sons d'alerte du Mac (/System/Library/Sounds), joués avec afplay
+ipcMain.on('sound:system', (_e, name, volume) => {
+  if (!/^[A-Za-z]+$/.test(name)) return;
+  const file = `/System/Library/Sounds/${name}.aiff`;
+  if (fs.existsSync(file)) execFile('afplay', ['-v', String(Math.max(0, Math.min(1, volume))), file], () => {});
+});
 ipcMain.handle('usage:get', (_e, configDir) => claudeUsage(configDir));
 ipcMain.handle('fs:subdirs', (_e, dir) => {
   try {
