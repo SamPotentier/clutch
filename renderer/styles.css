@@ -170,11 +170,18 @@ button.danger { color: var(--danger); }
 #workspace { flex: 1; display: flex; min-height: 0; }
 #left { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #btn-diff.on { border-color: var(--accent); color: var(--accent); }
-#diff-resizer, #kanban-resizer { width: 5px; flex-shrink: 0; cursor: col-resize; background: var(--border); }
-#diff-resizer:hover, body.resizing #diff-resizer, #kanban-resizer:hover, body.resizing #kanban-resizer { background: var(--accent); }
+#side-resizer { width: 5px; flex-shrink: 0; cursor: col-resize; background: var(--border); }
+#side-resizer:hover, body.resizing #side-resizer { background: var(--accent); }
 body.resizing { cursor: col-resize; user-select: none; }
 body.resizing .xterm { pointer-events: none; }
-#diff-panel { flex-shrink: 0; min-width: 320px; display: flex; flex-direction: column; background: var(--bg-2); }
+#side-panel { flex-shrink: 0; min-width: 320px; display: flex; flex-direction: column; background: var(--bg-2); }
+#side-tabs { display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--border); }
+#side-tabs button { background: none; border: 1px solid transparent; border-bottom: none; border-radius: var(--r) var(--r) 0 0; padding: 5px 12px; color: var(--muted); margin-bottom: -1px; }
+#side-tabs button:hover { color: var(--text); }
+#side-tabs button.on { background: var(--bg-2); border-color: var(--border); color: var(--text); }
+#side-diff-count { margin-left: 6px; padding: 0 6px; border-radius: 9px; background: var(--accent); color: var(--on-accent); font-size: 11px; }
+#side-diff-count:empty { display: none; }
+#diff-panel, #kanban-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .diff-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .diff-title { display: flex; gap: 10px; align-items: baseline; min-width: 0; font-weight: 600; }
 .diff-title #diff-stats { font-weight: 400; color: var(--muted); font-size: 12px; white-space: nowrap; }
@@ -268,8 +275,7 @@ body[data-theme="glass"] {
 body[data-theme="glass"] #sidebar,
 body[data-theme="glass"] #tabbar,
 body[data-theme="glass"] #promptbar,
-body[data-theme="glass"] #diff-panel,
-body[data-theme="glass"] #kanban-panel,
+body[data-theme="glass"] #side-panel,
 body[data-theme="glass"] .dialog,
 body[data-theme="glass"] .popover {
   backdrop-filter: blur(28px) saturate(170%);
@@ -281,7 +287,7 @@ body[data-theme="glass"] .term-wrap { border: 1px solid var(--border); box-shado
 body[data-theme="glass"] .term-wrap.visible { inset: 10px; }
 body[data-theme="glass"] .tab.active { background: rgba(255, 255, 255, .14); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .15); }
 body[data-theme="glass"] button.primary { background: linear-gradient(135deg, #a5b4ff, #ff9ad5); border-color: transparent; }
-body[data-theme="glass"] #diff-resizer { background: rgba(255, 255, 255, .06); }
+body[data-theme="glass"] #side-resizer { background: rgba(255, 255, 255, .06); }
 
 /* ---------- Thème Papier : pour ceux qui n'aiment pas la vue terminal ---------- */
 body:is([data-theme="papier"], [data-theme="conversation"]) {
@@ -619,7 +625,7 @@ body[data-theme="systeme"] .term-head span:nth-child(3) { text-transform: none; 
 #bg-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none; display: none; }
 body.has-bg #bg-layer { display: block; }
 #app { position: relative; z-index: 1; }
-body.has-bg :is(#sidebar, #tabbar, #promptbar, #diff-panel, #kanban-panel) { background: color-mix(in srgb, var(--bg-2) var(--panel-alpha), transparent) !important; }
+body.has-bg :is(#sidebar, #tabbar, #promptbar, #side-panel) { background: color-mix(in srgb, var(--bg-2) var(--panel-alpha), transparent) !important; }
 body.has-bg :is(.term-body, .chat-wrap) { background: color-mix(in srgb, var(--term-bg) var(--panel-alpha), transparent) !important; }
 body.has-bg .term-wrap { background: transparent; }
 body.has-bg .xterm,
@@ -779,7 +785,6 @@ body.dragging-term .xterm { pointer-events: none; }
 #snd-mac.on { border-color: var(--accent); color: var(--text); }
 
 /* ---------- Kanban ---------- */
-#kanban-panel { flex-shrink: 0; min-width: 280px; display: flex; flex-direction: column; background: var(--bg-2); }
 #kb-project { padding: 3px 6px; font-size: 12px; font-weight: 600; max-width: 220px; }
 #kb-stats { font-weight: 400; color: var(--muted); font-size: 12px; white-space: nowrap; }
 #kb-error { margin: 8px 10px 0; padding: 8px 10px; border-radius: var(--r); background: var(--del-bg); color: var(--danger); font-size: 12px; }

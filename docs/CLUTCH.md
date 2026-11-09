@@ -23,7 +23,7 @@ Un développeur qui travaille avec Claude Code jongle avec plusieurs projets (so
 | Ouvrir un projet en un clic | **Projets (presets)** : dossier, couleur, compte Claude et la liste des terminaux à ouvrir (racine, `front`, `back`, Claude, shell ou commande comme `npm run dev`), avec leur disposition. |
 | Voir plusieurs terminaux à la fois | **Onglets ou grille** : côte à côte, empilés, grille, « 1 + pile », « 1 + rangée ». Séparations redimensionnables, terminaux déplaçables par glisser-déposer, passage grille ↔ onglets. |
 | Savoir où en est Claude | **Indicateurs d'état** sur les onglets, les en-têtes et la liste des projets : rond qui tourne quand Claude travaille, bulle qui pulse quand il attend une réponse. **Son de fin** au choix (sons synthétisés ou sons du Mac, dont « Brise »). |
-| Voir ce que Claude a changé | **Panneau de diff** à droite, en direct, depuis l'ouverture de l'onglet ou depuis le dernier commit. |
+| Voir ce que Claude a changé | Onglet **Modifications** du panneau de droite (partagé avec le kanban, un seul visible à la fois), en direct, depuis l'ouverture de l'onglet ou depuis le dernier commit. |
 | Relancer les prompts et skills habituels | **Barre de prompt** (vers le terminal actif ou tous), **prompts enregistrés**, **skills** Claude Code listés et lancés via un formulaire avec aperçu. |
 | Séparer pro et perso | **Espaces par compte Claude** : chaque compte a ses projets, onglets, skills et historique. |
 | Suivre les tâches et les relier à Claude | **Kanban par projet** (À faire, En cours, À relire, Fait), tickets **ClickUp** importés par leur numéro, lancement d'un skill sur une carte, mise à jour du tableau par un skill Claude. |
@@ -38,7 +38,7 @@ Un développeur qui travaille avec Claude Code jongle avec plusieurs projets (so
 2. `⌘B` ouvre le kanban du projet. « + Ticket » puis `CICD-42` crée la carte à partir du ticket ClickUp (titre, description, priorité, échéance…).
 3. Clic sur la carte → choix du skill `ticket` et du projet → Entrée : une session Claude démarre avec `/ticket CICD-42 (tâche kanban t-…)`.
 4. Le skill fait passer la carte en « En cours », puis « À relire ». Le tableau se met à jour tout seul et fait briller la carte déplacée. Si la synchro est activée sur le projet, le ticket passe en « dev en cours », puis en « revue de code à faire », et les 47 minutes passées en « En cours » sont loggées dans ClickUp.
-5. Pendant ce temps, le diff s'ouvre à droite au fil des modifications. Quand Claude a fini, le son « Brise » retentit et l'onglet affiche une bulle : c'est à toi.
+5. Pendant ce temps, l'onglet « Modifications » compte les fichiers modifiés (le diff s'ouvre seul si le kanban n'est pas affiché). Quand Claude a fini, le son « Brise » retentit et l'onglet affiche une bulle : c'est à toi.
 6. Le soir, la croix ferme la fenêtre mais garde les sessions vivantes (comme Discord) ; un clic sur l'icône du Dock la rouvre.
 
 ### Glossaire

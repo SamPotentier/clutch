@@ -87,15 +87,16 @@ const state = { theme: 'nuit', accounts: [], account: '', defaultName: 'Pro', la
   diff: { open: false, scope: 'session', auto: true, width: 560, collapsed: new Set() },
   bg: { kind: '', color: '#1e2a44', image: '', imageName: '', opacity: 78, blur: 0 },
   sound: { name: 'carillon', volume: 60 },
-  kanban: { open: false, width: 640, presetId: '' } };
+  kanban: { open: false, width: 640, presetId: '' }, side: { width: 640 } };
 const byPty = new Map(); // ptyId -> tab
 
 function persist() {
   api.saveData({
     theme: state.theme, accounts: state.accounts, account: state.account, defaultName: state.defaultName, chatMode: state.chatMode, presets: state.presets, prompts: state.prompts, layout: state.layout,
     skillConfigs: state.skillConfigs, customSkills: state.customSkills, bg: state.bg, sound: state.sound,
-    diff: { scope: state.diff.scope, auto: state.diff.auto, width: state.diff.width },
-    kanban: { open: state.kanban.open, width: state.kanban.width, presetId: state.kanban.presetId, lastSkill: state.kanban.lastSkill },
+    diff: { scope: state.diff.scope, auto: state.diff.auto },
+    side: { width: state.side.width },
+    kanban: { open: state.kanban.open, presetId: state.kanban.presetId, lastSkill: state.kanban.lastSkill },
   });
 }
 
@@ -1343,24 +1344,38 @@ function refreshDiff() {
 async function loadDiff() {
   const t = activeTab();
   const seq = ++diffSeq;
-  if (!t?.git) return renderDiff(t, null);
+  if (!t?.git) {
+    $('#side-diff-count').textContent = '';
+    return renderDiff(t, null);
+  }
   const patches = await api.gitDiff(t.git.repos, state.diff.scope === 'session');
   if (seq !== diffSeq) return;
   // Plusieurs dépôts (ex. front/ et back/) : chaque chemin est préfixé par son dépôt
   const files = patches.flatMap(({ name, patch }) =>
     parseDiff(patch).map((f) => ({ ...f, repo: name, path: name ? `${name}/${f.path}` : f.path })));
   if (!files.length) t.diffDismissed = false;
-  else if (state.diff.auto && !t.diffDismissed && !state.diff.open) setDiffOpen(true);
+  // L'ouverture auto ne prend pas la place du kanban : le compteur de l'onglet suffit
+  else if (state.diff.auto && !t.diffDismissed && !state.diff.open && !state.kanban.open) setDiffOpen(true);
+  $('#side-diff-count').textContent = files.length || '';
   renderDiff(t, files);
 }
 
+// Diff et kanban partagent le panneau de droite : un seul visible à la fois, choisi par onglet
+function updateSidePanel() {
+  const open = state.diff.open || state.kanban.open;
+  $('#side-panel').classList.toggle('hidden', !open);
+  $('#side-resizer').classList.toggle('hidden', !open);
+  $('#side-panel').style.width = state.side.width + 'px';
+  document.querySelectorAll('#side-tabs button').forEach((b) => b.classList.toggle('on', state[b.dataset.side].open));
+  requestAnimationFrame(() => state.tabs.forEach(fitTab));
+}
+
 function setDiffOpen(open) {
+  if (open && state.kanban.open) setKanbanOpen(false);
   state.diff.open = open;
   $('#diff-panel').classList.toggle('hidden', !open);
-  $('#diff-resizer').classList.toggle('hidden', !open);
-  $('#diff-panel').style.width = state.diff.width + 'px';
   $('#btn-diff').classList.toggle('on', open);
-  requestAnimationFrame(() => state.tabs.forEach(fitTab));
+  updateSidePanel();
 }
 
 function toggleDiff() {
@@ -1459,14 +1474,19 @@ $('#diff-scope').onchange = (e) => { state.diff.scope = e.target.value; persist(
 $('#diff-auto').onchange = (e) => { state.diff.auto = e.target.checked; persist(); };
 api.onGitChanged((root) => { if (activeTab()?.git?.repos.some((r) => r.root === root)) refreshDiff(); });
 
-$('#diff-resizer').addEventListener('mousedown', (e) => {
+document.querySelectorAll('#side-tabs button').forEach((b) => b.onclick = () => {
+  if (b.dataset.side === 'kanban') return state.kanban.open || setKanbanOpen(true);
+  if (!state.diff.open) toggleDiff();
+});
+
+$('#side-resizer').addEventListener('mousedown', (e) => {
   e.preventDefault();
   const right = $('#workspace').getBoundingClientRect().right;
   const max = $('#workspace').offsetWidth - 320;
   document.body.classList.add('resizing');
   const move = (ev) => {
-    state.diff.width = Math.max(320, Math.min(max, right - ev.clientX));
-    $('#diff-panel').style.width = state.diff.width + 'px';
+    state.side.width = Math.max(320, Math.min(max, right - ev.clientX));
+    $('#side-panel').style.width = state.side.width + 'px';
   };
   const up = () => {
     document.body.classList.remove('resizing');
@@ -1987,6 +2007,7 @@ api.onRebuildLog((text) => {
   Object.assign(state.bg, data.bg || {});
   Object.assign(state.sound, data.sound || {});
   Object.assign(state.kanban, data.kanban || {});
+  state.side.width = data.side?.width || state.kanban.width || state.side.width;
   applyTheme(data.theme || 'nuit');
   applyBg();
   state.customSkills = data.customSkills || [];

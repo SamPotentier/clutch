@@ -86,7 +86,12 @@
         <div id="slash-pop" class="popover hidden"></div>
       </div>
       </div>
-      <div id="diff-resizer" class="hidden"></div>
+      <div id="side-resizer" class="hidden"></div>
+      <div id="side-panel" class="hidden">
+      <div id="side-tabs">
+        <button data-side="diff" title="Modifications (⌘D)">Modifications<span id="side-diff-count"></span></button>
+        <button data-side="kanban" title="Kanban (⌘B)">Kanban</button>
+      </div>
       <aside id="diff-panel" class="hidden">
         <div class="diff-head">
           <div class="diff-title"><span id="diff-project"></span><span id="diff-stats"></span></div>
@@ -104,7 +109,6 @@
         <div id="diff-files"></div>
         <div id="diff-body"></div>
       </aside>
-      <div id="kanban-resizer" class="hidden"></div>
       <aside id="kanban-panel" class="hidden">
         <div class="diff-head">
           <div class="diff-title"><select id="kb-project" title="Projet"></select><button id="kb-add-btn" data-icon="plus" title="Ajouter une tâche ou un ticket ClickUp">Ticket</button><span id="kb-stats"></span></div>
@@ -120,6 +124,7 @@
         <div id="kb-error" class="hidden"></div>
         <div id="kb-board"></div>
       </aside>
+      </div>
       </div>
     </main>
   </div>

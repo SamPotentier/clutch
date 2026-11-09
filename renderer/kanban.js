@@ -36,18 +36,21 @@ function kanbanFollow(tab) {
 }
 
 function setKanbanOpen(open) {
+  if (open && state.diff.open) {
+    // Passer au kanban vaut fermeture du diff : il ne se rouvre pas tout seul sur cet onglet
+    if (activeTab()) activeTab().diffDismissed = true;
+    setDiffOpen(false);
+  }
   state.kanban.open = open;
   $('#kanban-panel').classList.toggle('hidden', !open);
-  $('#kanban-resizer').classList.toggle('hidden', !open);
-  $('#kanban-panel').style.width = state.kanban.width + 'px';
   $('#btn-kanban').classList.toggle('on', open);
+  updateSidePanel();
   persist();
   if (open) kanbanFollow(activeTab());
   else {
     kb.dir = '';
     api.kanbanWatch(null);
   }
-  requestAnimationFrame(() => state.tabs.forEach(fitTab));
 }
 const toggleKanban = () => setKanbanOpen(!state.kanban.open);
 
@@ -399,27 +402,6 @@ $('#btn-kanban').onclick = toggleKanban;
 $('#kb-close').onclick = toggleKanban;
 $('#kb-reload').onclick = loadKanban;
 api.onKanbanChanged((dir) => { if (dir === kb.dir) loadKanban(); });
-
-$('#kanban-resizer').addEventListener('mousedown', (e) => {
-  e.preventDefault();
-  const start = e.clientX;
-  const width = state.kanban.width;
-  const max = $('#workspace').offsetWidth - 320;
-  document.body.classList.add('resizing');
-  const move = (ev) => {
-    state.kanban.width = Math.max(280, Math.min(max, width + start - ev.clientX));
-    $('#kanban-panel').style.width = state.kanban.width + 'px';
-  };
-  const up = () => {
-    document.body.classList.remove('resizing');
-    window.removeEventListener('mousemove', move);
-    window.removeEventListener('mouseup', up);
-    persist();
-    state.tabs.forEach(fitTab);
-  };
-  window.addEventListener('mousemove', move);
-  window.addEventListener('mouseup', up);
-});
 
 function initKanban() {
   if (state.kanban.open) setKanbanOpen(true);
