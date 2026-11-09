@@ -326,6 +326,15 @@ $('#kb-board').addEventListener('keydown', (e) => {
   e.stopPropagation();
 });
 
+// Carte ClickUp déplacée dans un projet sans synchro : on le dit, une fois par projet et par session
+const kbHinted = new Set();
+function kbSyncOffHint() {
+  const p = kbPreset();
+  if (!p || kbHinted.has(p.id)) return;
+  kbHinted.add(p.id);
+  toast(`Synchro ClickUp désactivée pour ${p.name} : le ticket ne change pas dans ClickUp. Active-la dans Modifier le projet → Synchro ClickUp.`, 'err');
+}
+
 /* Glisser-déposer : changer de colonne, ou d'ordre dans la colonne */
 const kbClearDrop = () => document.querySelectorAll('.kb-drop-before, .kb-drop-end').forEach((x) => x.classList.remove('kb-drop-before', 'kb-drop-end'));
 
@@ -372,7 +381,10 @@ $('#kb-board').addEventListener('drop', (e) => {
     const last = rest.map((x) => x.status).lastIndexOf(status);
     at = last < 0 ? rest.length : last + 1;
   }
-  if (t.status !== status) Object.assign(t, { status, updated: kbNow() });
+  if (t.status !== status) {
+    Object.assign(t, { status, updated: kbNow() });
+    if (t.clickup && !kbPreset()?.clickupSync?.enabled) kbSyncOffHint();
+  }
   rest.splice(at, 0, t);
   kb.tasks = rest;
   saveKanban();
