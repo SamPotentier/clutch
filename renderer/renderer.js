@@ -1109,11 +1109,17 @@ function openSkillRun(skill, presetId) {
     const inputs = [...fieldsEl.querySelectorAll('input[data-key], textarea[data-key]')];
     prefilled = TASK_KEYS.map((k) => inputs.find((i) => i.dataset.key === k)).find(Boolean) || inputs[0];
     if (prefilled) {
-      const { title, description, id } = runTask;
+      const { title, description, id, clickup: cu } = runTask;
+      const ref = cu ? cu.customId || cu.id : '';
       // L'id permet au skill de retrouver la carte pour la faire avancer
-      prefilled.value = prefilled.tagName === 'TEXTAREA'
-        ? `${title}${description ? `\n\n${description}` : ''}\n\n(tâche kanban ${id})`
-        : `${title}${description ? ` — ${description.replace(/\s+/g, ' ')}` : ''} (tâche kanban ${id})`;
+      if (prefilled.tagName === 'TEXTAREA') {
+        prefilled.value = `${ref ? `Ticket ClickUp ${ref} : ` : ''}${title}${cu?.url ? `\n${cu.url}` : ''}${description ? `\n\n${description}` : ''}\n\n(tâche kanban ${id})`;
+      } else if (ref) {
+        // Un skill qui prend un ticket attend le numéro ; les autres reçoivent aussi le titre
+        prefilled.value = prefilled.dataset.key === 'ticket' ? `${ref} (tâche kanban ${id})` : `${ref} ${title} (tâche kanban ${id})`;
+      } else {
+        prefilled.value = `${title}${description ? ` — ${description.replace(/\s+/g, ' ')}` : ''} (tâche kanban ${id})`;
+      }
     }
   }
 
@@ -1442,6 +1448,38 @@ $('#diff-resizer').addEventListener('mousedown', (e) => {
   window.addEventListener('mouseup', up);
 });
 
+/* ---------- Paramètres ---------- */
+
+async function renderClickupStatus(res) {
+  res ||= await api.clickupStatus();
+  const st = $('#cu-status');
+  st.className = res.error ? 'err' : res.configured ? 'ok' : '';
+  st.textContent = res.error ? res.error : res.configured ? `connecté${res.user ? ` · ${res.user}` : ''}` : 'non configuré';
+  $('#cu-remove').classList.toggle('hidden', !res.configured);
+  $('#cu-token').placeholder = res.configured ? 'Nouvelle clé pk_… (la clé actuelle est enregistrée)' : 'pk_…';
+}
+
+function openSettings() {
+  $('#cu-token').value = '';
+  $('#cu-status').textContent = '…';
+  $('#settings').classList.remove('hidden');
+  $('#cu-token').focus();
+  renderClickupStatus();
+}
+
+$('#btn-settings').onclick = openSettings;
+$('#settings').addEventListener('mousedown', (e) => { if (e.target.id === 'settings') closeOverlay($('#settings')); });
+$('#settings-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const token = $('#cu-token').value.trim();
+  if (!token) return;
+  $('#cu-status').textContent = 'vérification…';
+  const res = await api.clickupSetToken(token);
+  if (!res.error) $('#cu-token').value = '';
+  renderClickupStatus(res);
+};
+$('#cu-remove').onclick = async () => renderClickupStatus(await api.clickupSetToken(''));
+
 /* ---------- Thèmes ---------- */
 
 function applyTheme(name) {
@@ -1737,7 +1775,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!$('#palette').classList.contains('hidden')) return closePalette();
     if (!$('#modal').classList.contains('hidden')) return closeModal();
-    const open = document.querySelector('#accounts:not(.hidden), #skill-edit:not(.hidden), #skill-run:not(.hidden)');
+    const open = document.querySelector('#accounts:not(.hidden), #settings:not(.hidden), #skill-edit:not(.hidden), #skill-run:not(.hidden)');
     if (open) return closeOverlay(open);
   }
   if (!e.metaKey || e.altKey || e.ctrlKey) return;
@@ -1867,6 +1905,8 @@ api.onRebuildLog((text) => {
 
 (async () => {
   const data = await api.loadData();
+  // Les scripts suivants (chat.js, kanban.js) peuvent ne pas être encore chargés quand les données arrivent
+  if (document.readyState === 'loading') await new Promise((r) => document.addEventListener('DOMContentLoaded', r, { once: true }));
   state.presets = data.presets || [];
   state.prompts = data.prompts || [];
   state.layout = 'tabs';

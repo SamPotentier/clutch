@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -472,6 +472,109 @@ ipcMain.on('kanban:watch', (_e, dir) => {
     fs.watchFile(kanbanWatched, { interval: 700 }, () => win && !win.isDestroyed() && win.webContents.send('kanban:changed', dir));
   }
 });
+/* ---------- ClickUp ---------- */
+// La clé API est chiffrée avec le trousseau macOS (safeStorage) et ne repasse jamais par l'interface.
+const secretsFile = () => path.join(app.getPath('userData'), 'secrets.json');
+function readSecrets() {
+  try { return JSON.parse(fs.readFileSync(secretsFile(), 'utf8')); } catch { return {}; }
+}
+function writeSecrets(data) {
+  fs.writeFileSync(secretsFile(), JSON.stringify(data), { mode: 0o600 });
+}
+function clickupToken() {
+  const enc = readSecrets().clickup;
+  if (!enc) return '';
+  try { return safeStorage.decryptString(Buffer.from(enc, 'base64')); } catch { return ''; }
+}
+let clickupTeams = null;
+
+async function clickupGet(token, route) {
+  const res = await fetch(`https://api.clickup.com/api/v2/${route}`, { headers: { Authorization: token } });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(body.err || `ClickUp a répondu ${res.status}`), { status: res.status });
+  return body;
+}
+
+ipcMain.handle('clickup:status', async () => {
+  const token = clickupToken();
+  if (!token) return { configured: false };
+  try {
+    const { user } = await clickupGet(token, 'user');
+    return { configured: true, user: user?.username || user?.email || '' };
+  } catch (e) {
+    return { configured: true, error: e.message };
+  }
+});
+ipcMain.handle('clickup:set-token', async (_e, token) => {
+  const secrets = readSecrets();
+  clickupTeams = null;
+  token = String(token || '').trim();
+  if (!token) {
+    delete secrets.clickup;
+    writeSecrets(secrets);
+    return { configured: false };
+  }
+  let user;
+  try {
+    ({ user } = await clickupGet(token, 'user'));
+  } catch (e) {
+    return { configured: false, error: e.status === 401 ? 'Clé refusée par ClickUp' : e.message };
+  }
+  if (!safeStorage.isEncryptionAvailable()) return { configured: false, error: 'Chiffrement indisponible sur ce Mac' };
+  secrets.clickup = safeStorage.encryptString(token).toString('base64');
+  writeSecrets(secrets);
+  return { configured: true, user: user?.username || user?.email || '' };
+});
+
+// Accepte un id (86c0abc12, #86c0abc12), un id personnalisé (CICD-123) ou un lien app.clickup.com/t/…
+function parseClickupRef(ref) {
+  ref = String(ref || '').trim().replace(/^#/, '');
+  const url = ref.match(/clickup\.com\/t\/(?:(\d+)\/)?([\w-]+)/);
+  if (url) return { id: url[2], teamId: url[1], custom: !!url[1] };
+  return { id: ref, custom: /^[A-Za-z][\w]*-\d+$/.test(ref) };
+}
+
+async function clickupTask(ref) {
+  const token = clickupToken();
+  if (!token) return { error: 'Ajoute ta clé ClickUp dans les paramètres' };
+  const { id, teamId, custom } = parseClickupRef(ref);
+  if (!/^[\w-]+$/.test(id)) return { error: 'Numéro de ticket invalide' };
+  const q = 'include_markdown_description=true&include_subtasks=true';
+  try {
+    let task;
+    if (custom) {
+      // Les ids personnalisés demandent l'espace de travail : on essaie ceux du compte
+      clickupTeams ||= (await clickupGet(token, 'team')).teams.map((t) => t.id);
+      for (const team of teamId ? [teamId] : clickupTeams) {
+        try { task = await clickupGet(token, `task/${encodeURIComponent(id)}?custom_task_ids=true&team_id=${team}&${q}`); break; } catch (e) { if (e.status !== 401 && e.status !== 404 && e.status !== 400) throw e; }
+      }
+      if (!task) return { error: `Ticket ${id} introuvable` };
+    } else {
+      task = await clickupGet(token, `task/${encodeURIComponent(id)}?${q}`);
+    }
+    const day = (ms) => (ms ? new Date(+ms).toISOString().slice(0, 10) : undefined);
+    return {
+      task: {
+        id: task.id,
+        customId: task.custom_id || undefined,
+        name: task.name,
+        description: (task.markdown_description || task.text_content || '').trim(),
+        url: task.url,
+        status: task.status?.status,
+        priority: task.priority?.priority,
+        assignees: (task.assignees || []).map((a) => a.username || a.email).filter(Boolean),
+        tags: (task.tags || []).map((t) => t.name),
+        due: day(task.due_date),
+        list: task.list?.name,
+        subtasks: (task.subtasks || []).map((t) => ({ name: t.name, status: t.status?.status })),
+        checklists: (task.checklists || []).map((c) => ({ name: c.name, items: (c.items || []).map((i) => ({ name: i.name, done: !!i.resolved })) })),
+      },
+    };
+  } catch (e) {
+    return { error: e.status === 404 || e.status === 400 ? `Ticket ${id} introuvable` : e.status === 401 ? 'Clé ClickUp refusée : vérifie-la dans les paramètres' : e.message };
+  }
+}
+ipcMain.handle('clickup:task', (_e, ref) => clickupTask(ref));
 // Mises à jour : l'app installée connaît son dossier de sources et le commit dont elle est issue (source.json).
 // Une mise à jour est disponible si le dépôt distant a de nouveaux commits, ou si les sources locales ont avancé.
 function buildInfo() {

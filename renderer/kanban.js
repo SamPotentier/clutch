@@ -12,7 +12,9 @@ const KB_COLS = [
 const KB_ALIASES = { todo: 'todo', afaire: 'todo', backlog: 'todo', inprogress: 'in_progress', doing: 'in_progress', encours: 'in_progress', wip: 'in_progress', review: 'review', toreview: 'review', inreview: 'review', arelire: 'review', done: 'done', fait: 'done', termine: 'done' };
 const kbStatus = (s) => KB_ALIASES[String(s || '').normalize('NFD').replace(/[^a-z]/gi, '').toLowerCase()] || 'todo';
 
-const kb = { dir: '', tasks: [], error: '', loaded: false, seen: new Map(), editing: null, dragId: null, flash: new Map() };
+const kb = { dir: '', tasks: [], error: '', loaded: false, seen: new Map(), editing: null, dragId: null, flash: new Map(), adding: false, addMsg: '' };
+// Numéro de ticket ClickUp : #86c0abc12, CICD-123 ou un lien app.clickup.com/t/…
+const KB_TICKET = /^(#\S+|[A-Za-z][\w]*-\d+|https?:\/\/(app\.)?clickup\.com\/t\/\S+)$/;
 
 const kbPreset = () => spacePresets().find((p) => p.id === state.kanban.presetId);
 const kbNow = () => new Date().toISOString();
@@ -99,17 +101,24 @@ function kbCard(t) {
   }
   const flash = Date.now() - (kb.flash.get(t.id) || 0) < 2500 ? ' flash' : '';
   return `<div class="kb-card${flash}" draggable="true" data-id="${esc(t.id)}" title="Clic pour lancer un skill sur cette tâche · glisse pour changer de colonne">
+    ${t.clickup ? kbClickupLine(t.clickup) : ''}
     <div class="kb-title">${esc(t.title)}</div>
     ${t.description ? `<div class="kb-desc">${esc(t.description)}</div>` : ''}
     <div class="kb-meta">
       <span class="kb-time" title="${esc(t.updated || '')}">${esc(kbAgo(t.updated || t.created))}</span>
       <span class="kb-tools">
+        ${t.clickup ? `<button type="button" data-a="cu-refresh" title="Recharger depuis ClickUp">${icon('refresh')}</button>` : ''}
         <button type="button" data-a="send" title="Envoyer la tâche au terminal actif">${icon('send')}</button>
         <button type="button" data-a="edit" title="Modifier">${icon('pencil')}</button>
         <button type="button" data-a="del" title="Supprimer">${icon('trash')}</button>
       </span>
     </div>
   </div>`;
+}
+
+function kbClickupLine(cu) {
+  const bits = [cu.status, cu.priority && `priorité ${cu.priority}`, cu.due && `échéance ${cu.due}`, cu.assignees?.length && cu.assignees.join(', ')].filter(Boolean);
+  return `<div class="kb-cu"><button type="button" data-a="cu-open" title="Ouvrir dans ClickUp">${icon('link')}${esc(cu.customId || cu.id)}</button><span>${esc(bits.join(' · '))}</span></div>`;
 }
 
 function renderKanban() {
@@ -133,7 +142,7 @@ function renderKanban() {
     const tasks = kb.tasks.filter((t) => t.status === c.id);
     return `<section class="kb-col" data-status="${c.id}">
       <header><span class="kb-dot"></span>${c.label}<span class="kb-count">${tasks.length}</span></header>
-      ${c.id === 'todo' ? '<form class="kb-add"><input placeholder="Nouvelle tâche… (Entrée)" spellcheck="false"></form>' : ''}
+      ${c.id === 'todo' ? `<form class="kb-add"><input placeholder="Tâche ou #ticket ClickUp…" title="Un titre, ou un ticket ClickUp : #86c0abc12, CICD-123 ou un lien" spellcheck="false"${kb.adding ? ' disabled' : ''}>${kb.addMsg ? `<div class="kb-add-msg">${esc(kb.addMsg)}</div>` : ''}</form>` : ''}
       <div class="kb-cards">${tasks.map(kbCard).join('')}</div>
     </section>`;
   }).join('');
@@ -172,16 +181,68 @@ function kbSend(t) {
   focusTab(tab);
 }
 
+// Données ClickUp rangées dans la carte (le skill peut s'en servir aussi)
+function kbFromClickup(t, cu) {
+  const { name, description, ...meta } = cu;
+  for (const k of Object.keys(meta)) if (meta[k] === undefined || (Array.isArray(meta[k]) && !meta[k].length)) delete meta[k];
+  Object.assign(t, { title: name, clickup: meta, updated: kbNow() });
+  if (description) t.description = description;
+  else delete t.description;
+  return t;
+}
+
+async function kbAddTicket(ref) {
+  kb.adding = true;
+  kb.addMsg = 'Recherche du ticket dans ClickUp…';
+  renderKanban();
+  const dir = kb.dir;
+  const res = await api.clickupTask(ref);
+  kb.adding = false;
+  kb.addMsg = res.error || '';
+  if (res.task && dir === kb.dir) {
+    const dup = kb.tasks.find((t) => t.clickup?.id === res.task.id);
+    if (dup) {
+      kb.addMsg = `Déjà sur le tableau : ${dup.title}`;
+      kb.flash.set(dup.id, Date.now());
+    } else {
+      const now = kbNow();
+      kb.tasks.push(kbFromClickup({ id: `t-${uid().slice(0, 6)}`, status: 'todo', created: now }, res.task));
+      await saveKanban();
+      return $('#kb-board .kb-add input')?.focus();
+    }
+  } else if (res.error) {
+    // On rend la saisie pour pouvoir la corriger
+    renderKanban();
+    const input = $('#kb-board .kb-add input');
+    input.value = ref;
+    return input.focus();
+  }
+  renderKanban();
+}
+
 $('#kb-board').addEventListener('submit', (e) => {
   e.preventDefault();
   const input = e.target.querySelector('input');
   const title = input.value.trim();
-  if (!title || kb.error) return;
+  if (!title || kb.error || kb.adding) return;
   input.value = '';
+  if (KB_TICKET.test(title)) return kbAddTicket(title);
+  kb.addMsg = '';
   const now = kbNow();
   kb.tasks.push({ id: `t-${uid().slice(0, 6)}`, title, status: 'todo', created: now, updated: now });
   saveKanban();
 });
+
+async function kbRefreshTicket(t) {
+  const res = await api.clickupTask(t.clickup.id);
+  if (res.error) {
+    kb.addMsg = `${t.clickup.customId || t.clickup.id} : ${res.error}`;
+    return renderKanban();
+  }
+  kbFromClickup(t, res.task);
+  kb.flash.set(t.id, Date.now());
+  saveKanban();
+}
 
 $('#kb-board').addEventListener('click', (e) => {
   const b = e.target.closest('[data-a]');
@@ -197,6 +258,8 @@ $('#kb-board').addEventListener('click', (e) => {
   if (!t) return;
   const a = b.dataset.a;
   if (a === 'send') kbSend(t);
+  else if (a === 'cu-open') window.open(t.clickup.url || `https://app.clickup.com/t/${t.clickup.id}`);
+  else if (a === 'cu-refresh') kbRefreshTicket(t);
   else if (a === 'edit') kbStartEdit(t.id);
   else if (a === 'save') kbSaveEdit();
   else if (a === 'cancel') { kb.editing = null; renderKanban(); }
