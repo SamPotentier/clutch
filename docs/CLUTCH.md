@@ -213,7 +213,7 @@ Un preset sans synchro reste enregistré sans cette clé, et rien ne change pour
 | `todo → review`, passage en `done`, retours en arrière | rien | rien |
 
 - Le statut ClickUp est toujours relu (`GET /task/{id}`) juste avant le `PUT` : un ticket n'est jamais reculé, et un ticket déjà plus avancé est laissé tel quel.
-- Noms comparés sans casse, accents ni espaces en trop.
+- Noms comparés sans casse, accents ni espaces en trop. Avant le `PUT`, le nom réglé est remplacé par le nom exact du statut dans la liste du ticket (`GET /list/{listId}`, gardé 10 min) : ClickUp refuse un nom qui n'est pas identique (« revue de code à faire » pour « revue de code a faire »). Un statut absent de la liste donne une erreur explicite qui cite les statuts disponibles.
 - L'id natif `clickup.id` est utilisé pour le `PUT` et le temps, jamais `customId`.
 - Aucun commentaire n'est créé dans ClickUp.
 - `timing` est écrit par main (relecture du fichier puis écriture atomique) ; ces écritures ne changent aucun statut et ne déclenchent donc pas de transition. Quand l'interface sauvegarde (`kanban:write`), main reprend sa propre valeur de `timing`, `teamId` et `listId`, pour qu'une sauvegarde faite avant relecture ne les efface pas. Si un skill réécrit la carte sans `timing`, le `startedAt` gardé en mémoire sert de secours.
@@ -224,6 +224,7 @@ Un preset sans synchro reste enregistré sans cette clé, et rien ne change pour
 - autres erreurs (clé absente ou refusée, ticket introuvable) : l'action est abandonnée et signalée ;
 - la file (`clickupQueue`) et les clés des entrées de temps déjà créées (`clickupLogged`, `taskId:startedAt`, 500 dernières) sont dans `data.json`. Ces clés sont tenues par main : la sauvegarde de l'interface, qui réécrit tout le fichier, les conserve ;
 - idempotence : le statut est relu avant chaque `PUT`, et une entrée de temps dont la clé est déjà connue n'est pas recréée ;
+- chaque résultat (succès, refus, mise en file) est ajouté à `clickup-sync.log` dans le dossier de l'app, sans la clé ;
 - côté interface : un succès donne une notification discrète ; un échec donne une notification visible et un marqueur « non synchronisé » sur la carte, retiré au succès suivant. La carte affiche aussi le temps loggé et un point quand le chrono tourne.
 
 #### Utilisation du forfait

@@ -740,7 +740,11 @@ function persistSyncQueue() {
   saveMainOwned();
 }
 
+// Journal des synchros (sans la clé), pour comprendre après coup ce qui est parti ou non
+const syncLogFile = () => path.join(app.getPath('userData'), 'clickup-sync.log');
 function syncNotify(a, ok, extra = {}) {
+  const line = { at: new Date().toISOString(), project: a.project, task: a.taskId, ticket: a.ref, action: a.kind, ok, ...extra };
+  try { fs.appendFileSync(syncLogFile(), JSON.stringify(line) + '\n'); } catch {}
   if (win && !win.isDestroyed()) win.webContents.send('clickup:sync', { project: a.project, taskId: a.taskId, ref: a.ref, action: a.kind, ok, ...extra });
 }
 
@@ -764,6 +768,22 @@ async function clickupSend(token, method, route, body) {
   return json;
 }
 
+// Statuts de chaque liste, gardés 10 min, pour retrouver le nom exact à partir du réglage
+const listStatuses = new Map(); // listId -> { at, list, names }
+async function exactStatus(token, listId, name) {
+  if (!listId) return name;
+  let c = listStatuses.get(listId);
+  if (!c || Date.now() - c.at > 10 * 60 * 1000) {
+    const list = await clickupGet(token, `list/${encodeURIComponent(listId)}`);
+    c = { at: Date.now(), list: list.name, names: (list.statuses || []).map((x) => x.status) };
+    listStatuses.set(listId, c);
+  }
+  if (!c.names.length) return name;
+  const found = c.names.find((n) => sameStatus(n, name));
+  if (!found) throw Object.assign(new Error(`statut « ${name} » introuvable dans la liste « ${c.list} » (${c.names.join(', ')})`), { status: 400 });
+  return found;
+}
+
 async function runSyncAction(a, token) {
   const task = await clickupGet(token, `task/${encodeURIComponent(a.clickupId)}`);
   const ids = rememberIds(a, task);
@@ -771,8 +791,10 @@ async function runSyncAction(a, token) {
     // Relu juste avant d'écrire : on n'avance que depuis un statut attendu, sinon on ne touche à rien
     const current = task.status?.status;
     if (!a.allowed.some((s) => sameStatus(s, current))) return { skipped: true, detail: `déjà « ${current} », inchangé` };
-    await clickupSend(token, 'PUT', `task/${encodeURIComponent(a.clickupId)}`, { status: a.target });
-    return { detail: `→ ${a.target}` };
+    // ClickUp n'accepte que le nom exact du statut (« a faire » sans accent, par exemple)
+    const target = await exactStatus(token, ids.listId || task.list?.id, a.target);
+    await clickupSend(token, 'PUT', `task/${encodeURIComponent(a.clickupId)}`, { status: target });
+    return { detail: `→ ${target}` };
   }
   if (syncLogged.includes(a.key)) return { skipped: true, detail: 'temps déjà loggé' };
   const teamId = a.teamId || ids.teamId;
