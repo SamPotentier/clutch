@@ -214,6 +214,7 @@ function activate(key) {
   applyLayout();
   refreshDiff();
   kanbanFollow(tab);
+  updatePromptBar();
   requestAnimationFrame(() => { fitTab(tab); focusTab(tab); });
 }
 
@@ -1530,6 +1531,7 @@ function applyTheme(name) {
   const th = currentTheme();
   document.body.dataset.theme = state.theme;
   $('#prompt').placeholder = th.placeholder;
+  updatePromptBar();
   api.setWindowBg(th.winBg);
   for (const t of state.tabs) if (t.term) Object.assign(t.term.options, termOptions(th));
   requestAnimationFrame(() => state.tabs.forEach(fitTab));
@@ -1663,6 +1665,7 @@ function sendPrompt() {
   }
   targets.forEach((t) => sendToTab(t, text));
   ta.value = '';
+  closePromptBar();
   autoGrow();
   focusActive();
 }
@@ -1676,6 +1679,7 @@ function pickProjectFor(text) {
   if (skill && !m[2]) {
     $('#prompt').value = '';
     autoGrow();
+    closePromptBar();
     return openSkillRun(skill);
   }
   const short = text.length > 50 ? text.slice(0, 50) + '…' : text;
@@ -1685,6 +1689,7 @@ function pickProjectFor(text) {
     onPick: (p) => {
       $('#prompt').value = '';
       autoGrow();
+      closePromptBar();
       openSession(p, { prompt: text, title: skill ? `${p.name} · ${skill.name}` : undefined });
     },
   });
@@ -1698,6 +1703,27 @@ function sendToTab(t, text) {
   setTimeout(() => api.write(t.ptyId, '\r'), 120);
 }
 
+// En vue terminal, la barre de prompt est masquée pour laisser la place aux terminaux :
+// ⌘L l'ouvre, Échap ou l'envoi la referme. Elle reste affichée en vue conversation.
+let promptOpen = false;
+function updatePromptBar() {
+  const show = !!currentTheme().chat || activeTab()?.kind === 'chat' || promptOpen;
+  const bar = $('#promptbar');
+  if (bar.classList.contains('hidden') !== show) return;
+  bar.classList.toggle('hidden', !show);
+  requestAnimationFrame(() => state.tabs.forEach(fitTab));
+}
+function openPromptBar() {
+  promptOpen = true;
+  updatePromptBar();
+  $('#prompt').focus();
+}
+function closePromptBar() {
+  promptOpen = false;
+  $('#snippets').classList.add('hidden');
+  updatePromptBar();
+}
+
 function autoGrow() {
   const ta = $('#prompt');
   ta.style.height = 'auto';
@@ -1707,7 +1733,7 @@ function autoGrow() {
 $('#prompt').addEventListener('input', autoGrow);
 $('#prompt').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || (currentTheme().chat && !e.shiftKey && !e.isComposing))) { e.preventDefault(); sendPrompt(); }
-  if (e.key === 'Escape') focusActive();
+  if (e.key === 'Escape') { closePromptBar(); focusActive(); }
 });
 $('#btn-send').onclick = sendPrompt;
 
@@ -1829,7 +1855,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'enter' && !$('#skill-run').classList.contains('hidden')) $('#skill-run-form').requestSubmit();
   else if (k === 't') openTerminal({ name: 'shell', cwd: activeTab()?.cwd || '~', command: '' });
   else if (k === 'w') { if (state.activeKey) closeTab(state.activeKey); }
-  else if (k === 'l') $('#prompt').focus();
+  else if (k === 'l') openPromptBar();
   else if (k === 'n') openPresetModal();
   else if (k === 'g') $('#btn-layout').click();
   else if (k === 'd') toggleDiff();
