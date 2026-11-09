@@ -200,7 +200,7 @@ function gitWatch(root) {
     entry.watcher = fs.watch(root, { recursive: true }, (_ev, file) => {
       const f = String(file || '');
       // On ignore node_modules et l'intérieur de .git, sauf index/HEAD (commit, checkout, add)
-      if (/(^|\/)node_modules(\/|$)/.test(f)) return;
+      if (/(^|\/)node_modules(\/|$)/.test(f) || /^\.clutch(\/|$)/.test(f)) return;
       if (/^\.git(\/|$)/.test(f) && !/^\.git\/(index|HEAD)$/.test(f)) return;
       clearTimeout(entry.timer);
       entry.timer = setTimeout(() => win && !win.isDestroyed() && win.webContents.send('git:changed', root), 400);
@@ -441,6 +441,35 @@ ipcMain.handle('bg:read', (_e, file) => {
     return `data:image/${ext};base64,${fs.readFileSync(file).toString('base64')}`;
   } catch {
     return null;
+  }
+});
+// Kanban : un fichier .clutch/kanban.json par projet, lisible et modifiable par Claude (skill) comme par l'app
+const kanbanFile = (dir) => path.join(expandHome(dir), '.clutch', 'kanban.json');
+function readKanban(dir) {
+  try {
+    const data = JSON.parse(fs.readFileSync(kanbanFile(dir), 'utf8'));
+    return { tasks: Array.isArray(data.tasks) ? data.tasks : [] };
+  } catch (e) {
+    // Fichier absent : tableau vide ; fichier cassé : on le signale sans l'écraser
+    return e.code === 'ENOENT' ? { tasks: [] } : { tasks: [], error: e.message };
+  }
+}
+ipcMain.handle('kanban:read', (_e, dir) => readKanban(dir));
+ipcMain.handle('kanban:write', (_e, dir, tasks) => {
+  const file = kanbanFile(dir);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ version: 1, tasks }, null, 2) + '\n');
+  fs.renameSync(tmp, file);
+  return true;
+});
+// Surveillance par sondage : fonctionne même si le fichier n'existe pas encore ou est remplacé d'un bloc
+let kanbanWatched = null;
+ipcMain.on('kanban:watch', (_e, dir) => {
+  if (kanbanWatched) fs.unwatchFile(kanbanWatched);
+  kanbanWatched = dir ? kanbanFile(dir) : null;
+  if (kanbanWatched) {
+    fs.watchFile(kanbanWatched, { interval: 700 }, () => win && !win.isDestroyed() && win.webContents.send('kanban:changed', dir));
   }
 });
 // Mises à jour : l'app installée connaît son dossier de sources et le commit dont elle est issue (source.json).

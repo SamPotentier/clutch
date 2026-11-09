@@ -170,8 +170,8 @@ button.danger { color: var(--danger); }
 #workspace { flex: 1; display: flex; min-height: 0; }
 #left { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #btn-diff.on { border-color: var(--accent); color: var(--accent); }
-#diff-resizer { width: 5px; flex-shrink: 0; cursor: col-resize; background: var(--border); }
-#diff-resizer:hover, body.resizing #diff-resizer { background: var(--accent); }
+#diff-resizer, #kanban-resizer { width: 5px; flex-shrink: 0; cursor: col-resize; background: var(--border); }
+#diff-resizer:hover, body.resizing #diff-resizer, #kanban-resizer:hover, body.resizing #kanban-resizer { background: var(--accent); }
 body.resizing { cursor: col-resize; user-select: none; }
 body.resizing .xterm { pointer-events: none; }
 #diff-panel { flex-shrink: 0; min-width: 320px; display: flex; flex-direction: column; background: var(--bg-2); }
@@ -269,6 +269,7 @@ body[data-theme="glass"] #sidebar,
 body[data-theme="glass"] #tabbar,
 body[data-theme="glass"] #promptbar,
 body[data-theme="glass"] #diff-panel,
+body[data-theme="glass"] #kanban-panel,
 body[data-theme="glass"] .dialog,
 body[data-theme="glass"] .popover {
   backdrop-filter: blur(28px) saturate(170%);
@@ -618,7 +619,7 @@ body[data-theme="systeme"] .term-head span:nth-child(3) { text-transform: none; 
 #bg-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none; display: none; }
 body.has-bg #bg-layer { display: block; }
 #app { position: relative; z-index: 1; }
-body.has-bg :is(#sidebar, #tabbar, #promptbar, #diff-panel) { background: color-mix(in srgb, var(--bg-2) var(--panel-alpha), transparent) !important; }
+body.has-bg :is(#sidebar, #tabbar, #promptbar, #diff-panel, #kanban-panel) { background: color-mix(in srgb, var(--bg-2) var(--panel-alpha), transparent) !important; }
 body.has-bg :is(.term-body, .chat-wrap) { background: color-mix(in srgb, var(--term-bg) var(--panel-alpha), transparent) !important; }
 body.has-bg .term-wrap { background: transparent; }
 body.has-bg .xterm,
@@ -776,3 +777,43 @@ body.dragging-term .xterm { pointer-events: none; }
 .tab-rename { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 4px; padding: 0 4px; margin: -1px 0; min-width: 0; outline: none; }
 #snd-mac { flex: 1; }
 #snd-mac.on { border-color: var(--accent); color: var(--text); }
+
+/* ---------- Kanban ---------- */
+#kanban-panel { flex-shrink: 0; min-width: 280px; display: flex; flex-direction: column; background: var(--bg-2); }
+#kb-project { padding: 3px 6px; font-size: 12px; font-weight: 600; max-width: 220px; }
+#kb-stats { font-weight: 400; color: var(--muted); font-size: 12px; white-space: nowrap; }
+#kb-error { margin: 8px 10px 0; padding: 8px 10px; border-radius: var(--r); background: var(--del-bg); color: var(--danger); font-size: 12px; }
+#kb-board { flex: 1; min-height: 0; overflow: auto; padding: 10px; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; align-items: start; align-content: start; }
+.kb-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 6px; border-radius: var(--r2); background: color-mix(in srgb, var(--bg-3) 45%, transparent); min-height: 80px; }
+.kb-col header { display: flex; align-items: center; gap: 6px; padding: 2px 4px 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.kb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex-shrink: 0; }
+.kb-col[data-status="in_progress"] .kb-dot { background: var(--warn); }
+.kb-col[data-status="review"] .kb-dot { background: var(--info); }
+.kb-col[data-status="done"] .kb-dot { background: var(--add); }
+.kb-count { margin-left: auto; font-weight: 400; }
+.kb-add input { width: 100%; font-size: 12px; padding: 5px 8px; }
+.kb-cards { display: flex; flex-direction: column; gap: 6px; min-height: 30px; flex: 1; }
+.kb-card { position: relative; padding: 7px 9px; border-radius: var(--r); background: var(--bg); border: 1px solid var(--border); cursor: grab; display: flex; flex-direction: column; gap: 4px; }
+.kb-card:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+.kb-card.dragging { opacity: .35; }
+.kb-col[data-status="done"] .kb-card:not(.editing) .kb-title { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
+.kb-title { font-size: 12.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.kb-desc { font-size: 11.5px; color: var(--muted); line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 5.5em; overflow: hidden; }
+.kb-meta { display: flex; align-items: center; gap: 4px; min-height: 18px; }
+.kb-time { font-size: 10.5px; color: var(--faint); }
+.kb-tools { margin-left: auto; display: flex; gap: 1px; opacity: 0; transition: opacity .12s; }
+.kb-card:hover .kb-tools { opacity: 1; }
+.kb-tools button { border: none; background: transparent; padding: 1px 3px; color: var(--muted); min-width: 0; min-height: 0; }
+.kb-tools button:hover { color: var(--accent); }
+.kb-tools button[data-a="del"]:hover { color: var(--danger); }
+.kb-tools .ic { width: 13px; height: 13px; }
+.kb-card.editing { cursor: default; gap: 6px; border-color: var(--accent); }
+.kb-card.editing input, .kb-card.editing textarea { width: 100%; font-size: 12px; padding: 4px 6px; resize: vertical; }
+.kb-e-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.kb-e-actions button { font-size: 11.5px; padding: 2px 8px; }
+.kb-drop-before::before { content: ""; position: absolute; left: 0; right: 0; top: -4px; height: 2px; border-radius: 2px; background: var(--accent); }
+.kb-col.kb-drop-end .kb-cards::after { content: ""; height: 2px; border-radius: 2px; background: var(--accent); }
+.kb-card.flash { animation: kb-flash 2.2s ease-out; }
+@keyframes kb-flash { 0%, 30% { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+#kb-board.readonly .kb-add, #kb-board.readonly .kb-tools button:not([data-a="send"]) { display: none; }
+#kb-board.readonly .kb-card { cursor: default; }

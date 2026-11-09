@@ -9,6 +9,7 @@ Gestionnaire de terminaux multi-projets (Electron + xterm.js + node-pty).
 - **Barre de prompt** : écris un prompt multi-ligne et envoie-le au terminal actif ou à tous les terminaux (`⌘↵`). Les prompts récurrents s'enregistrent avec ★.
 - **Skills** : l'onglet Skills de la barre latérale liste tes skills Claude Code (perso, claude.ai, plugins, et ceux de chaque projet dans `.claude/skills` / `.claude/commands`). Clic → choix du projet, formulaire des infos demandées, aperçu du prompt, puis lancement dans un nouveau terminal Claude ou dans une session déjà ouverte. `⚡` sur un projet ou `⌘J` ouvre directement la liste des skills pour ce projet. ☆ met un skill en favori : il remonte dans le groupe Favoris et en tête de `⌘J`.
 - **Diff à droite** : dès que des fichiers changent dans le projet de l'onglet actif (dépôt git), l'écran se scinde : terminal et prompt à gauche, diff à droite, mis à jour en direct. Par défaut on compare à l'état au moment de l'ouverture de l'onglet (donc seulement ce que Claude a modifié) ; le menu permet de passer à « tout le non-commité ». `⌘D` ou `±` ouvre/ferme, la barre centrale se fait glisser, la case « auto » coupe l'ouverture automatique.
+- **Kanban** (`⌘B` ou le bouton tableau en haut à droite) : un tableau de tâches par projet, en panneau à droite (redimensionnable), qui suit le projet de l'onglet actif. Quatre colonnes : À faire, En cours, À relire, Fait. Ajoute une tâche dans « À faire » (Entrée), glisse les cartes d'une colonne à l'autre ou pour les réordonner, double-clic pour modifier le titre et les détails, ➤ pour envoyer la tâche au terminal actif. Les tâches sont dans `.clutch/kanban.json` à la racine du projet : un skill Claude peut les faire avancer en modifiant ce fichier, le tableau se met à jour en direct et fait briller les cartes déplacées (voir [Format du kanban](#format-du-kanban)).
 - **Thèmes** (◐ en haut à droite, ou `⌘K` → « Thème ») : *Nuit* (d'origine), *Glass* (verre dépoli sur fond coloré), *Papier* (clair et doux, terminal présenté comme une carte de conversation et prompt comme une zone de message — pour ceux qui n'aiment pas la vue terminal), *Rétro* (arcade, assorti au logo), *Système* (fenêtres bleu néon façon Solo Leveling), *Kyōto* (encre sumi, vermillon, vagues seigaiha). Les thèmes sont présentés en grille de vignettes.
 - **Utilisation de Claude** (en haut à droite) : jauges de la session (5 h) et de la semaine pour le compte de l'espace actif ; clic pour le détail et les heures de réinitialisation. Les chiffres viennent de la commande `/usage` de Claude Code (aucun appel au modèle), rafraîchis toutes les 5 min, au retour sur l'app et après chaque réponse en mode conversation. Orange à 70 %, rouge à 90 %.
 - **État de Claude** : dans l'onglet, l'en-tête du terminal et la liste des projets, un rond qui tourne quand Claude travaille, une bulle qui pulse quand il attend ta réponse (réponse terminée, autorisation ou question). Fonctionne en vue terminal (d'après le titre que Claude Code donne au terminal) comme en vue conversation.
@@ -48,8 +49,35 @@ Construit `Clutch.app` (icône incluse), l'installe dans `/Applications` et l'é
 | `⌘J` | Lancer un skill sur le projet du terminal actif |
 | `⌘↵` (fenêtre skill) | Lancer le skill |
 | `⌘D` | Afficher / masquer le diff |
+| `⌘B` | Afficher / masquer le kanban |
 | `⌘N` | Nouveau preset |
 | `⌘G` | Basculer entre onglets et grille |
+
+## Format du kanban
+
+Fichier `<projet>/.clutch/kanban.json` (créé à la première tâche) :
+
+```json
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "t-a1b2c3",
+      "title": "Ajouter la page login",
+      "description": "Facultatif, sur plusieurs lignes",
+      "status": "in_progress",
+      "created": "2026-11-09T10:12:00.000Z",
+      "updated": "2026-11-09T10:40:00.000Z"
+    }
+  ]
+}
+```
+
+- `status` : `todo` (À faire), `in_progress` (En cours), `review` (À relire), `done` (Fait). Les variantes courantes (`to do`, `doing`, `to_review`, `en cours`, `fait`…) sont acceptées à la lecture et réécrites sous la forme canonique dès que l'app modifie le tableau ; un statut inconnu tombe dans À faire.
+- `id` et `title` sont obligatoires (une tâche sans eux est ignorée). L'ordre du tableau `tasks` est l'ordre d'affichage dans chaque colonne. Les autres champs ajoutés par un skill sont conservés.
+- Pour faire avancer une tâche, il suffit de changer son `status` (et `updated`) ; pour en créer une, d'ajouter un objet avec un `id` unique.
+- Si le JSON devient invalide, le tableau passe en lecture seule et l'affiche, sans écraser le fichier, jusqu'à ce qu'il soit corrigé.
+- Le dossier `.clutch/` peut être ajouté au `.gitignore` du projet si le tableau doit rester local.
 
 ## Modèles de skills
 

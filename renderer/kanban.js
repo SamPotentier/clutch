@@ -1,0 +1,306 @@
+/* ---------- Kanban du projet ---------- */
+// Les tâches vivent dans <projet>/.clutch/kanban.json : l'app les affiche et les édite,
+// un skill Claude peut les faire avancer en modifiant le même fichier, surveillé en direct.
+
+const KB_COLS = [
+  { id: 'todo', label: 'À faire' },
+  { id: 'in_progress', label: 'En cours' },
+  { id: 'review', label: 'À relire' },
+  { id: 'done', label: 'Fait' },
+];
+// Statuts tolérés à la lecture (écrits à la main ou par Claude), ramenés aux quatre colonnes
+const KB_ALIASES = { todo: 'todo', afaire: 'todo', backlog: 'todo', inprogress: 'in_progress', doing: 'in_progress', encours: 'in_progress', wip: 'in_progress', review: 'review', toreview: 'review', inreview: 'review', arelire: 'review', done: 'done', fait: 'done', termine: 'done' };
+const kbStatus = (s) => KB_ALIASES[String(s || '').normalize('NFD').replace(/[^a-z]/gi, '').toLowerCase()] || 'todo';
+
+const kb = { dir: '', tasks: [], error: '', loaded: false, seen: new Map(), editing: null, dragId: null, flash: new Map() };
+
+const kbPreset = () => spacePresets().find((p) => p.id === state.kanban.presetId);
+const kbNow = () => new Date().toISOString();
+
+function kbAgo(iso) {
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (!(s >= 0)) return '';
+  if (s < 60) return "à l'instant";
+  if (s < 3600) return `il y a ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `il y a ${Math.floor(s / 3600)} h`;
+  return `il y a ${Math.floor(s / 86400)} j`;
+}
+
+// Le tableau suit le projet de l'onglet actif
+function kanbanFollow(tab) {
+  if (tab?.presetId && spacePresets().some((p) => p.id === tab.presetId)) state.kanban.presetId = tab.presetId;
+  else if (!kbPreset()) state.kanban.presetId = spacePresets()[0]?.id || '';
+  if (state.kanban.open) loadKanban();
+}
+
+function setKanbanOpen(open) {
+  state.kanban.open = open;
+  $('#kanban-panel').classList.toggle('hidden', !open);
+  $('#kanban-resizer').classList.toggle('hidden', !open);
+  $('#kanban-panel').style.width = state.kanban.width + 'px';
+  $('#btn-kanban').classList.toggle('on', open);
+  persist();
+  if (open) kanbanFollow(activeTab());
+  else {
+    kb.dir = '';
+    api.kanbanWatch(null);
+  }
+  requestAnimationFrame(() => state.tabs.forEach(fitTab));
+}
+const toggleKanban = () => setKanbanOpen(!state.kanban.open);
+
+async function loadKanban() {
+  renderKbProjects();
+  const dir = kbPreset()?.cwd || '';
+  if (dir !== kb.dir) {
+    Object.assign(kb, { dir, tasks: [], error: '', loaded: false, editing: null });
+    kb.seen.clear();
+    api.kanbanWatch(dir || null);
+  }
+  if (!dir) return renderKanban();
+  const res = await api.kanbanRead(dir);
+  if (dir !== kb.dir) return;
+  kb.error = res.error || '';
+  // Pendant une erreur (fichier en cours d'écriture ou cassé), on garde l'affichage précédent
+  if (!kb.error) {
+    kb.tasks = res.tasks.filter((t) => t && t.id != null && t.title).map((t) => ({ ...t, id: String(t.id), status: kbStatus(t.status) }));
+    // Cartes déplacées ou ajoutées depuis l'extérieur (Claude) : on les fait briller un instant
+    if (kb.loaded) {
+      for (const t of kb.tasks) if (kb.seen.get(t.id) !== t.status) kb.flash.set(t.id, Date.now());
+    }
+    kb.seen = new Map(kb.tasks.map((t) => [t.id, t.status]));
+    kb.loaded = true;
+  }
+  renderKanban();
+}
+
+async function saveKanban() {
+  if (!kb.dir || kb.error) return;
+  kb.seen = new Map(kb.tasks.map((t) => [t.id, t.status]));
+  renderKanban();
+  await api.kanbanWrite(kb.dir, kb.tasks);
+}
+
+function renderKbProjects() {
+  const presets = spacePresets();
+  $('#kb-project').innerHTML = presets.length
+    ? presets.map((p) => `<option value="${p.id}"${p.id === state.kanban.presetId ? ' selected' : ''}>${esc(p.name)}</option>`).join('')
+    : '<option value="">Aucun projet</option>';
+}
+
+function kbCard(t) {
+  const e = kb.editing;
+  if (e?.id === t.id) {
+    return `<div class="kb-card editing" data-id="${esc(t.id)}">
+      <input class="kb-e-title" value="${esc(e.title)}" spellcheck="false">
+      <textarea class="kb-e-desc" rows="3" placeholder="Détails (facultatif)" spellcheck="false">${esc(e.description)}</textarea>
+      <div class="kb-e-actions"><button type="button" data-a="cancel">Annuler</button><button type="button" class="primary" data-a="save">Enregistrer</button></div>
+    </div>`;
+  }
+  const flash = Date.now() - (kb.flash.get(t.id) || 0) < 2500 ? ' flash' : '';
+  return `<div class="kb-card${flash}" draggable="true" data-id="${esc(t.id)}" title="Glisse pour changer de colonne · double-clic pour modifier">
+    <div class="kb-title">${esc(t.title)}</div>
+    ${t.description ? `<div class="kb-desc">${esc(t.description)}</div>` : ''}
+    <div class="kb-meta">
+      <span class="kb-time" title="${esc(t.updated || '')}">${esc(kbAgo(t.updated || t.created))}</span>
+      <span class="kb-tools">
+        <button type="button" data-a="send" title="Envoyer la tâche au terminal actif">${icon('send')}</button>
+        <button type="button" data-a="edit" title="Modifier">${icon('pencil')}</button>
+        <button type="button" data-a="del" title="Supprimer">${icon('trash')}</button>
+      </span>
+    </div>
+  </div>`;
+}
+
+function renderKanban() {
+  const board = $('#kb-board');
+  const err = $('#kb-error');
+  err.classList.toggle('hidden', !kb.error);
+  err.textContent = kb.error ? `.clutch/kanban.json est illisible (${kb.error}). Le tableau est en lecture seule tant que le fichier n'est pas corrigé.` : '';
+  const n = kb.tasks.length;
+  $('#kb-stats').textContent = kb.dir ? `${n} tâche${n > 1 ? 's' : ''}` : '';
+  $('#kb-stats').title = kb.dir ? `${shortPath(kb.dir)}/.clutch/kanban.json` : '';
+  if (!kb.dir) {
+    board.innerHTML = '<div class="diff-empty">Ajoute un projet pour avoir un tableau de tâches.</div>';
+    return;
+  }
+  // Un rafraîchissement (Claude qui écrit) ne doit pas faire perdre une saisie en cours
+  const add = board.querySelector('.kb-add input');
+  const addValue = add?.value || '';
+  const addFocused = add && document.activeElement === add;
+  const editFocus = document.activeElement?.closest?.('.kb-card.editing') ? document.activeElement.className : '';
+  board.innerHTML = KB_COLS.map((c) => {
+    const tasks = kb.tasks.filter((t) => t.status === c.id);
+    return `<section class="kb-col" data-status="${c.id}">
+      <header><span class="kb-dot"></span>${c.label}<span class="kb-count">${tasks.length}</span></header>
+      ${c.id === 'todo' ? '<form class="kb-add"><input placeholder="Nouvelle tâche… (Entrée)" spellcheck="false"></form>' : ''}
+      <div class="kb-cards">${tasks.map(kbCard).join('')}</div>
+    </section>`;
+  }).join('');
+  board.classList.toggle('readonly', !!kb.error);
+  const input = board.querySelector('.kb-add input');
+  input.value = addValue;
+  if (addFocused) input.focus();
+  if (editFocus) board.querySelector(`.kb-card.editing .${editFocus.split(' ')[0]}`)?.focus();
+}
+
+function kbStartEdit(id) {
+  const t = kb.tasks.find((x) => x.id === id);
+  if (!t || kb.error) return;
+  kb.editing = { id, title: t.title, description: t.description || '' };
+  renderKanban();
+  const input = $('#kb-board .kb-e-title');
+  input.focus();
+  input.select();
+}
+
+function kbSaveEdit() {
+  const e = kb.editing;
+  const t = e && kb.tasks.find((x) => x.id === e.id);
+  kb.editing = null;
+  if (t && e.title.trim()) {
+    Object.assign(t, { title: e.title.trim(), description: e.description.trim(), updated: kbNow() });
+    if (!t.description) delete t.description;
+    saveKanban();
+  } else renderKanban();
+}
+
+function kbSend(t) {
+  const tab = activeTab();
+  if (!tab) return;
+  sendToTab(tab, `Tâche du kanban « ${t.title} » (id ${t.id})${t.description ? `\n\n${t.description}` : ''}`);
+  focusTab(tab);
+}
+
+$('#kb-board').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const input = e.target.querySelector('input');
+  const title = input.value.trim();
+  if (!title || kb.error) return;
+  input.value = '';
+  const now = kbNow();
+  kb.tasks.push({ id: `t-${uid().slice(0, 6)}`, title, status: 'todo', created: now, updated: now });
+  saveKanban();
+});
+
+$('#kb-board').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-a]');
+  const card = e.target.closest('.kb-card');
+  if (!b || !card) return;
+  const t = kb.tasks.find((x) => x.id === card.dataset.id);
+  if (!t) return;
+  const a = b.dataset.a;
+  if (a === 'send') kbSend(t);
+  else if (a === 'edit') kbStartEdit(t.id);
+  else if (a === 'save') kbSaveEdit();
+  else if (a === 'cancel') { kb.editing = null; renderKanban(); }
+  else if (a === 'del' && !kb.error) {
+    kb.tasks = kb.tasks.filter((x) => x !== t);
+    saveKanban();
+  }
+});
+$('#kb-board').addEventListener('dblclick', (e) => {
+  const card = e.target.closest('.kb-card:not(.editing)');
+  if (card && !e.target.closest('button')) kbStartEdit(card.dataset.id);
+});
+$('#kb-board').addEventListener('input', (e) => {
+  if (!kb.editing) return;
+  if (e.target.classList.contains('kb-e-title')) kb.editing.title = e.target.value;
+  if (e.target.classList.contains('kb-e-desc')) kb.editing.description = e.target.value;
+});
+$('#kb-board').addEventListener('keydown', (e) => {
+  if (!e.target.closest('.kb-card.editing')) return;
+  if (e.key === 'Escape') { kb.editing = null; renderKanban(); }
+  else if (e.key === 'Enter' && (e.target.classList.contains('kb-e-title') || e.metaKey)) { e.preventDefault(); kbSaveEdit(); }
+  else return;
+  e.stopPropagation();
+});
+
+/* Glisser-déposer : changer de colonne, ou d'ordre dans la colonne */
+const kbClearDrop = () => document.querySelectorAll('.kb-drop-before, .kb-drop-end').forEach((x) => x.classList.remove('kb-drop-before', 'kb-drop-end'));
+
+function kbDropSpot(e) {
+  const col = e.target.closest('.kb-col');
+  if (!col) return null;
+  const cards = [...col.querySelectorAll('.kb-card:not(.dragging)')];
+  const before = cards.find((c) => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
+  return { col, before };
+}
+
+$('#kb-board').addEventListener('dragstart', (e) => {
+  const card = e.target.closest('.kb-card');
+  if (!card || kb.error) return e.preventDefault();
+  kb.dragId = card.dataset.id;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', card.querySelector('.kb-title').textContent);
+  requestAnimationFrame(() => card.classList.add('dragging'));
+});
+$('#kb-board').addEventListener('dragend', () => {
+  kb.dragId = null;
+  kbClearDrop();
+  $('#kb-board .kb-card.dragging')?.classList.remove('dragging');
+});
+$('#kb-board').addEventListener('dragover', (e) => {
+  if (!kb.dragId) return;
+  const spot = kbDropSpot(e);
+  if (!spot) return;
+  e.preventDefault();
+  kbClearDrop();
+  if (spot.before) spot.before.classList.add('kb-drop-before');
+  else spot.col.classList.add('kb-drop-end');
+});
+$('#kb-board').addEventListener('drop', (e) => {
+  const spot = kb.dragId && kbDropSpot(e);
+  const t = spot && kb.tasks.find((x) => x.id === kb.dragId);
+  if (!t) return;
+  e.preventDefault();
+  const status = spot.col.dataset.status;
+  const rest = kb.tasks.filter((x) => x !== t);
+  let at = spot.before ? rest.findIndex((x) => x.id === spot.before.dataset.id) : -1;
+  if (at < 0) {
+    // En fin de colonne : juste après la dernière tâche de ce statut
+    const last = rest.map((x) => x.status).lastIndexOf(status);
+    at = last < 0 ? rest.length : last + 1;
+  }
+  if (t.status !== status) Object.assign(t, { status, updated: kbNow() });
+  rest.splice(at, 0, t);
+  kb.tasks = rest;
+  saveKanban();
+});
+
+$('#kb-project').onchange = (e) => {
+  state.kanban.presetId = e.target.value;
+  persist();
+  loadKanban();
+};
+$('#btn-kanban').onclick = toggleKanban;
+$('#kb-close').onclick = toggleKanban;
+$('#kb-reload').onclick = loadKanban;
+api.onKanbanChanged((dir) => { if (dir === kb.dir) loadKanban(); });
+
+$('#kanban-resizer').addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  const start = e.clientX;
+  const width = state.kanban.width;
+  const max = $('#workspace').offsetWidth - 320;
+  document.body.classList.add('resizing');
+  const move = (ev) => {
+    state.kanban.width = Math.max(280, Math.min(max, width + start - ev.clientX));
+    $('#kanban-panel').style.width = state.kanban.width + 'px';
+  };
+  const up = () => {
+    document.body.classList.remove('resizing');
+    window.removeEventListener('mousemove', move);
+    window.removeEventListener('mouseup', up);
+    persist();
+    state.tabs.forEach(fitTab);
+  };
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+});
+
+function initKanban() {
+  if (state.kanban.open) setKanbanOpen(true);
+  // Les « il y a 5 min » vieillissent
+  setInterval(() => { if (state.kanban.open && !kb.editing && !kb.dragId) renderKanban(); }, 60000);
+}

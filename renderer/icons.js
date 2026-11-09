@@ -42,6 +42,8 @@ const ICONS = {
   'box-done': '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m8 12 3 3 5-6"/>',
   'box-doing': '<rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1" fill="currentColor" stroke="none"/>',
   'box-todo': '<rect x="3" y="3" width="18" height="18" rx="2"/>',
+  kanban: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7v7M12 7v4M16 7v10"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
   'chevron-down': '<path d="m6 9 6 6 6-6"/>',
 };
 

@@ -41,7 +41,7 @@
       </section>
       <div class="side-foot">
         <button id="btn-free" title="Cmd+T">Terminal libre</button>
-        <div class="hint">⌘K lancer · ⌘J skill · ⌘T nouveau · ⌘W fermer · ⌘L prompt · ⌘1-9 onglets</div>
+        <div class="hint">⌘K lancer · ⌘J skill · ⌘T nouveau · ⌘W fermer · ⌘L prompt · ⌘B kanban · ⌘1-9 onglets</div>
       </div>
     </aside>
 
@@ -51,6 +51,7 @@
         <div id="usage" class="hidden" title="Utilisation de Claude — clique pour le détail"></div>
         <div class="tab-actions">
           <button id="btn-diff" data-icon="diff" title="Afficher les modifications (⌘D)"></button>
+          <button id="btn-kanban" data-icon="kanban" title="Tableau des tâches du projet (⌘B)"></button>
           <button id="btn-layout" title="Basculer onglets / grille"></button>
           <button id="btn-accounts" data-icon="user" title="Comptes Claude"></button>
           <button id="btn-theme" data-icon="palette" title="Thème, fond et son"></button>
@@ -101,6 +102,18 @@
         </div>
         <div id="diff-files"></div>
         <div id="diff-body"></div>
+      </aside>
+      <div id="kanban-resizer" class="hidden"></div>
+      <aside id="kanban-panel" class="hidden">
+        <div class="diff-head">
+          <div class="diff-title"><select id="kb-project" title="Projet"></select><span id="kb-stats"></span></div>
+          <div class="diff-tools">
+            <button id="kb-reload" data-icon="refresh" title="Relire le fichier"></button>
+            <button id="kb-close" data-icon="x" title="Fermer (⌘B)"></button>
+          </div>
+        </div>
+        <div id="kb-error" class="hidden"></div>
+        <div id="kb-board"></div>
       </aside>
       </div>
     </main>
@@ -206,5 +219,6 @@
   <script src="icons.js"></script>
   <script src="renderer.js"></script>
   <script src="chat.js"></script>
+  <script src="kanban.js"></script>
 </body>
 </html>

@@ -86,7 +86,8 @@ const termOptions = (th) => ({ theme: { ...SCROLLBAR, ...scrollbarFor(th), ...th
 const state = { theme: 'nuit', accounts: [], account: '', defaultName: 'Pro', lastActive: {}, presets: [], prompts: [], layout: 'tabs', tabs: [], activeKey: null, skills: [], skillConfigs: {}, customSkills: [],
   diff: { open: false, scope: 'session', auto: true, width: 560, collapsed: new Set() },
   bg: { kind: '', color: '#1e2a44', image: '', imageName: '', opacity: 78, blur: 0 },
-  sound: { name: 'carillon', volume: 60 } };
+  sound: { name: 'carillon', volume: 60 },
+  kanban: { open: false, width: 640, presetId: '' } };
 const byPty = new Map(); // ptyId -> tab
 
 function persist() {
@@ -94,6 +95,7 @@ function persist() {
     theme: state.theme, accounts: state.accounts, account: state.account, defaultName: state.defaultName, chatMode: state.chatMode, presets: state.presets, prompts: state.prompts, layout: state.layout,
     skillConfigs: state.skillConfigs, customSkills: state.customSkills, bg: state.bg, sound: state.sound,
     diff: { scope: state.diff.scope, auto: state.diff.auto, width: state.diff.width },
+    kanban: { open: state.kanban.open, width: state.kanban.width, presetId: state.kanban.presetId },
   });
 }
 
@@ -211,6 +213,7 @@ function activate(key) {
   renderTabs();
   applyLayout();
   refreshDiff();
+  kanbanFollow(tab);
   requestAnimationFrame(() => { fitTab(tab); focusTab(tab); });
 }
 
@@ -762,7 +765,7 @@ function switchSpace(id) {
   scanSkills();
   refreshUsage();
   if (back) activate(back.key);
-  else refreshDiff();
+  else { refreshDiff(); kanbanFollow(null); }
 }
 
 $('#space-switch').addEventListener('click', (e) => {
@@ -1701,6 +1704,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'n') openPresetModal();
   else if (k === 'g') $('#btn-layout').click();
   else if (k === 'd') toggleDiff();
+  else if (k === 'b') toggleKanban();
   // e.code (touche physique) : en AZERTY, ⌘ + la touche 1 donne « & » dans e.key
   else if (/^Digit[1-9]$/.test(e.code) && !e.shiftKey) { const t = spaceTabs()[+e.code.slice(5) - 1]; if (t) activate(t.key); }
   else if (e.shiftKey && (k === ']' || k === '}' || k === '[' || k === '{')) {
@@ -1825,6 +1829,7 @@ api.onRebuildLog((text) => {
   state.account = state.accounts.some((a) => a.id === data.account) ? data.account : '';
   Object.assign(state.bg, data.bg || {});
   Object.assign(state.sound, data.sound || {});
+  Object.assign(state.kanban, data.kanban || {});
   applyTheme(data.theme || 'nuit');
   applyBg();
   state.customSkills = data.customSkills || [];
@@ -1837,4 +1842,5 @@ api.onRebuildLog((text) => {
   applyLayout();
   window.addEventListener('resize', () => state.tabs.forEach(fitTab));
   refreshUsage(true);
+  initKanban();
 })();
