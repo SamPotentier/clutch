@@ -98,7 +98,7 @@ function kbCard(t) {
     </div>`;
   }
   const flash = Date.now() - (kb.flash.get(t.id) || 0) < 2500 ? ' flash' : '';
-  return `<div class="kb-card${flash}" draggable="true" data-id="${esc(t.id)}" title="Glisse pour changer de colonne · double-clic pour modifier">
+  return `<div class="kb-card${flash}" draggable="true" data-id="${esc(t.id)}" title="Clic pour lancer un skill sur cette tâche · glisse pour changer de colonne">
     <div class="kb-title">${esc(t.title)}</div>
     ${t.description ? `<div class="kb-desc">${esc(t.description)}</div>` : ''}
     <div class="kb-meta">
@@ -186,7 +186,13 @@ $('#kb-board').addEventListener('submit', (e) => {
 $('#kb-board').addEventListener('click', (e) => {
   const b = e.target.closest('[data-a]');
   const card = e.target.closest('.kb-card');
-  if (!b || !card) return;
+  if (!card) return;
+  if (!b) {
+    // Clic sur la carte : choisir un skill et un projet, puis lancer
+    const t = !card.classList.contains('editing') && kb.tasks.find((x) => x.id === card.dataset.id);
+    if (t) openTaskRun(t, state.kanban.presetId);
+    return;
+  }
   const t = kb.tasks.find((x) => x.id === card.dataset.id);
   if (!t) return;
   const a = b.dataset.a;
@@ -198,10 +204,6 @@ $('#kb-board').addEventListener('click', (e) => {
     kb.tasks = kb.tasks.filter((x) => x !== t);
     saveKanban();
   }
-});
-$('#kb-board').addEventListener('dblclick', (e) => {
-  const card = e.target.closest('.kb-card:not(.editing)');
-  if (card && !e.target.closest('button')) kbStartEdit(card.dataset.id);
 });
 $('#kb-board').addEventListener('input', (e) => {
   if (!kb.editing) return;

@@ -95,7 +95,7 @@ function persist() {
     theme: state.theme, accounts: state.accounts, account: state.account, defaultName: state.defaultName, chatMode: state.chatMode, presets: state.presets, prompts: state.prompts, layout: state.layout,
     skillConfigs: state.skillConfigs, customSkills: state.customSkills, bg: state.bg, sound: state.sound,
     diff: { scope: state.diff.scope, auto: state.diff.auto, width: state.diff.width },
-    kanban: { open: state.kanban.open, width: state.kanban.width, presetId: state.kanban.presetId },
+    kanban: { open: state.kanban.open, width: state.kanban.width, presetId: state.kanban.presetId, lastSkill: state.kanban.lastSkill },
   });
 }
 
@@ -1033,12 +1033,33 @@ function showSideView(view) {
 
 function closeOverlay(el) {
   el.classList.add('hidden');
+  if (el.id === 'skill-run') runTask = null;
   focusActive();
 }
 
 /* Lancement d'un skill */
 
 let running = null;
+// Lancement depuis une carte du kanban : on choisit aussi le skill, et la tâche remplit le premier champ
+let runTask = null;
+const PLAIN_TASK = { key: 'kanban:plain', name: 'Juste la tâche', description: 'Envoie la tâche telle quelle à Claude', template: '{{tache:long}}' };
+const TASK_KEYS = ['arguments', 'tache', 'ticket', 'task', 'demande', 'sujet'];
+
+function openTaskRun(task, presetId) {
+  runTask = task;
+  const skill = [PLAIN_TASK, ...allSkills()].find((s) => s.key === state.kanban.lastSkill) || PLAIN_TASK;
+  openSkillRun(skill, presetId);
+}
+
+function renderRunSkills(current) {
+  const skills = allSkills();
+  const groups = SOURCE_GROUPS.map(([source, label]) => {
+    const group = skills.filter((s) => (source === 'fav' ? s.fav : !s.fav && s.source === source));
+    return group.length ? `<optgroup label="${label}">${group.map((s) => `<option value="${esc(s.key)}">${esc(s.name)}</option>`).join('')}</optgroup>` : '';
+  });
+  $('#skill-run-skill').innerHTML = `<option value="${PLAIN_TASK.key}">${PLAIN_TASK.name}</option>` + groups.join('');
+  $('#skill-run-skill').value = current.key;
+}
 
 function openSkillRun(skill, presetId) {
   const presets = skill.project ? spacePresets().filter((p) => p.cwd === skill.project) : spacePresets();
@@ -1053,8 +1074,11 @@ function openSkillRun(skill, presetId) {
   sel.innerHTML = (ask ? '<option value="" disabled selected>Choisis un projet…</option>' : '')
     + ordered.map((p) => `<option value="${p.id}">${esc(p.name)} — ${esc(shortPath(p.cwd))}${ask && p.id === last?.presetId ? ' (dernier utilisé)' : ''}</option>`).join('');
   sel.value = ask ? '' : (presets.find((p) => p.id === presetId) || presets.find((p) => p.id === last?.presetId) || presets[0]).id;
-  $('#skill-run-title').textContent = skill.name;
+  $('#skill-run-title').textContent = runTask ? `Lancer « ${runTask.title} »` : skill.name;
   $('#skill-run-desc').textContent = skill.description || skill.invoke;
+  $('#skill-run-skill-wrap').classList.toggle('hidden', !runTask);
+  if (runTask) renderRunSkills(skill);
+  $('#btn-skill-run-edit').classList.toggle('hidden', skill.key === PLAIN_TASK.key);
 
   const fieldsEl = $('#skill-run-fields');
   fieldsEl.innerHTML = '';
@@ -1080,10 +1104,25 @@ function openSkillRun(skill, presetId) {
     fieldsEl.appendChild(label);
   }
 
+  let prefilled = null;
+  if (runTask) {
+    const inputs = [...fieldsEl.querySelectorAll('input[data-key], textarea[data-key]')];
+    prefilled = TASK_KEYS.map((k) => inputs.find((i) => i.dataset.key === k)).find(Boolean) || inputs[0];
+    if (prefilled) {
+      const { title, description, id } = runTask;
+      // L'id permet au skill de retrouver la carte pour la faire avancer
+      prefilled.value = prefilled.tagName === 'TEXTAREA'
+        ? `${title}${description ? `\n\n${description}` : ''}\n\n(tâche kanban ${id})`
+        : `${title}${description ? ` — ${description.replace(/\s+/g, ' ')}` : ''} (tâche kanban ${id})`;
+    }
+  }
+
   renderRunTargets();
   updateRunPreview();
   $('#skill-run').classList.remove('hidden');
-  (ask ? sel : fieldsEl.querySelector('[data-key]') || $('#skill-run-form button[type=submit]')).focus();
+  // Depuis le kanban tout est prérempli : Entrée lance directement
+  const firstEmpty = [...fieldsEl.querySelectorAll('[data-key]')].find((i) => i.required && !i.value);
+  (ask ? sel : firstEmpty || (runTask ? null : fieldsEl.querySelector('[data-key]')) || $('#skill-run-form button[type=submit]')).focus();
 }
 
 function renderRunTargets() {
@@ -1104,7 +1143,11 @@ function updateRunPreview() {
   $('#skill-run-preview').textContent = fillTemplate(running.template, runValues().values);
 }
 
-$('#skill-run-form').addEventListener('input', updateRunPreview);
+$('#skill-run-form').addEventListener('input', (e) => { if (e.target.id !== 'skill-run-skill') updateRunPreview(); });
+$('#skill-run-skill').addEventListener('change', (e) => {
+  const skill = [PLAIN_TASK, ...allSkills()].find((s) => s.key === e.target.value);
+  if (skill) openSkillRun(skill, $('#skill-run-preset').value);
+});
 $('#skill-run-preset').addEventListener('change', () => { renderRunTargets(); updateRunPreview(); });
 $('#skill-run-form').onsubmit = (e) => {
   e.preventDefault();
@@ -1117,7 +1160,10 @@ $('#skill-run-form').onsubmit = (e) => {
     return sel.focus();
   }
   const prompt = fillTemplate(running.template, values);
-  state.skillConfigs[running.key] = { ...state.skillConfigs[running.key], last: { presetId: p.id, values } };
+  if (runTask) state.kanban.lastSkill = running.key;
+  // Les valeurs tirées d'une tâche ne servent pas de « dernière saisie » pour le skill
+  else state.skillConfigs[running.key] = { ...state.skillConfigs[running.key], last: { presetId: p.id, values } };
+  runTask = null;
   persist();
   closeOverlay($('#skill-run'));
   const tab = state.tabs.find((t) => t.key === $('#skill-run-target').value);
@@ -1129,6 +1175,8 @@ $('#skill-run-form').onsubmit = (e) => {
   }
 };
 $('#btn-skill-run-edit').onclick = () => {
+  if (running.key === PLAIN_TASK.key) return;
+  runTask = null;
   $('#skill-run').classList.add('hidden');
   openSkillEdit(running, $('#skill-run-preset').value);
 };
