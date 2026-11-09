@@ -12,7 +12,7 @@ const KB_COLS = [
 const KB_ALIASES = { todo: 'todo', afaire: 'todo', backlog: 'todo', inprogress: 'in_progress', doing: 'in_progress', encours: 'in_progress', wip: 'in_progress', review: 'review', toreview: 'review', inreview: 'review', arelire: 'review', done: 'done', fait: 'done', termine: 'done' };
 const kbStatus = (s) => KB_ALIASES[String(s || '').normalize('NFD').replace(/[^a-z]/gi, '').toLowerCase()] || 'todo';
 
-const kb = { dir: '', tasks: [], error: '', loaded: false, seen: new Map(), editing: null, dragId: null, flash: new Map(), adding: false, addMsg: '', unsynced: new Map() };
+const kb = { dir: '', tasks: [], error: '', loaded: false, seen: new Map(), editing: null, dragId: null, flash: new Map(), unsynced: new Map() };
 // Numéro de ticket ClickUp : #86c0abc12, CICD-123 ou un lien app.clickup.com/t/…
 const KB_TICKET = /^(#\S+|[A-Za-z][\w]*-\d+|https?:\/\/(app\.)?clickup\.com\/t\/\S+)$/;
 
@@ -55,6 +55,7 @@ async function loadKanban() {
   renderKbProjects();
   const dir = kbPreset()?.cwd || '';
   if (dir !== kb.dir) {
+    kbCloseAdd();
     Object.assign(kb, { dir, tasks: [], error: '', loaded: false, editing: null });
     kb.seen.clear();
     api.kanbanWatch(dir || null);
@@ -159,23 +160,18 @@ function renderKanban() {
     board.innerHTML = '<div class="diff-empty">Ajoute un projet pour avoir un tableau de tâches.</div>';
     return;
   }
-  // Un rafraîchissement (Claude qui écrit) ne doit pas faire perdre une saisie en cours
-  const add = board.querySelector('.kb-add input');
-  const addValue = add?.value || '';
-  const addFocused = add && document.activeElement === add;
+  // Un rafraîchissement (Claude qui écrit) ne doit pas faire perdre une modification en cours
+  $('#kb-add-btn').classList.toggle('hidden', !!kb.error);
+  if (kb.error) kbCloseAdd();
   const editFocus = document.activeElement?.closest?.('.kb-card.editing') ? document.activeElement.className : '';
   board.innerHTML = KB_COLS.map((c) => {
     const tasks = kb.tasks.filter((t) => t.status === c.id);
     return `<section class="kb-col" data-status="${c.id}">
       <header><span class="kb-dot"></span>${c.label}<span class="kb-count">${tasks.length}</span></header>
-      ${c.id === 'todo' ? `<form class="kb-add"><input placeholder="Tâche ou #ticket ClickUp…" title="Un titre, ou un ticket ClickUp : #86c0abc12, CICD-123 ou un lien" spellcheck="false"${kb.adding ? ' disabled' : ''}>${kb.addMsg ? `<div class="kb-add-msg">${esc(kb.addMsg)}</div>` : ''}</form>` : ''}
       <div class="kb-cards">${tasks.map(kbCard).join('')}</div>
     </section>`;
   }).join('');
   board.classList.toggle('readonly', !!kb.error);
-  const input = board.querySelector('.kb-add input');
-  input.value = addValue;
-  if (addFocused) input.focus();
   if (editFocus) board.querySelector(`.kb-card.editing .${editFocus.split(' ')[0]}`)?.focus();
 }
 
@@ -217,53 +213,76 @@ function kbFromClickup(t, cu) {
   return t;
 }
 
-async function kbAddTicket(ref) {
-  kb.adding = true;
-  kb.addMsg = 'Recherche du ticket dans ClickUp…';
-  renderKanban();
-  const dir = kb.dir;
-  const res = await api.clickupTask(ref);
-  kb.adding = false;
-  kb.addMsg = res.error || '';
-  if (res.task && dir === kb.dir) {
-    const dup = kb.tasks.find((t) => t.clickup?.id === res.task.id);
-    if (dup) {
-      kb.addMsg = `Déjà sur le tableau : ${dup.title}`;
-      kb.flash.set(dup.id, Date.now());
-    } else {
-      const now = kbNow();
-      kb.tasks.push(kbFromClickup({ id: `t-${uid().slice(0, 6)}`, status: 'todo', created: now }, res.task));
-      await saveKanban();
-      return $('#kb-board .kb-add input')?.focus();
-    }
-  } else if (res.error) {
-    // On rend la saisie pour pouvoir la corriger
-    renderKanban();
-    const input = $('#kb-board .kb-add input');
-    input.value = ref;
-    return input.focus();
-  }
-  renderKanban();
+/* Ajout : le bouton « Ticket » de l'en-tête ouvre un champ, la tâche arrive dans « À faire » */
+const kbAddInput = () => $('#kb-add input');
+function kbAddMessage(text) {
+  $('#kb-add-msg').textContent = text;
+  $('#kb-add-msg').classList.toggle('hidden', !text);
+}
+function kbOpenAdd() {
+  if (!kb.dir || kb.error) return;
+  $('#kb-add').classList.remove('hidden');
+  $('#kb-add-btn').classList.add('on');
+  kbAddInput().focus();
+}
+function kbCloseAdd() {
+  $('#kb-add').classList.add('hidden');
+  $('#kb-add-btn').classList.remove('on');
+  kbAddInput().value = '';
+  kbAddMessage('');
 }
 
-$('#kb-board').addEventListener('submit', (e) => {
+async function kbAddTicket(ref) {
+  const input = kbAddInput();
+  input.disabled = true;
+  kbAddMessage('Recherche du ticket dans ClickUp…');
+  const dir = kb.dir;
+  const res = await api.clickupTask(ref);
+  input.disabled = false;
+  if (dir !== kb.dir) return kbCloseAdd();
+  if (res.error) {
+    // On garde la saisie pour pouvoir la corriger
+    kbAddMessage(res.error);
+    return input.focus();
+  }
+  const dup = kb.tasks.find((t) => t.clickup?.id === res.task.id);
+  if (dup) {
+    kbAddMessage(`Déjà sur le tableau : ${dup.title}`);
+    kb.flash.set(dup.id, Date.now());
+    renderKanban();
+    input.select();
+    return input.focus();
+  }
+  const now = kbNow();
+  kb.tasks.push(kbFromClickup({ id: `t-${uid().slice(0, 6)}`, status: 'todo', created: now }, res.task));
+  kb.flash.set(kb.tasks.at(-1).id, Date.now());
+  kbCloseAdd();
+  saveKanban();
+}
+
+$('#kb-add').addEventListener('submit', (e) => {
   e.preventDefault();
-  const input = e.target.querySelector('input');
+  const input = kbAddInput();
   const title = input.value.trim();
-  if (!title || kb.error || kb.adding) return;
-  input.value = '';
+  if (!title || kb.error || input.disabled) return;
   if (KB_TICKET.test(title)) return kbAddTicket(title);
-  kb.addMsg = '';
   const now = kbNow();
   kb.tasks.push({ id: `t-${uid().slice(0, 6)}`, title, status: 'todo', created: now, updated: now });
+  kb.flash.set(kb.tasks.at(-1).id, Date.now());
+  kbCloseAdd();
   saveKanban();
 });
+$('#kb-add').addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  e.stopPropagation();
+  kbCloseAdd();
+});
+$('#kb-add-btn').onclick = () => ($('#kb-add').classList.contains('hidden') ? kbOpenAdd() : kbCloseAdd());
 
 async function kbRefreshTicket(t) {
   const res = await api.clickupTask(t.clickup.id);
   if (res.error) {
-    kb.addMsg = `${t.clickup.customId || t.clickup.id} : ${res.error}`;
-    return renderKanban();
+    return toast(`${t.clickup.customId || t.clickup.id} : ${res.error}`, 'err');
   }
   kbFromClickup(t, res.task);
   kb.flash.set(t.id, Date.now());

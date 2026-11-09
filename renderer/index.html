@@ -107,12 +107,16 @@
       <div id="kanban-resizer" class="hidden"></div>
       <aside id="kanban-panel" class="hidden">
         <div class="diff-head">
-          <div class="diff-title"><select id="kb-project" title="Projet"></select><span id="kb-stats"></span></div>
+          <div class="diff-title"><select id="kb-project" title="Projet"></select><button id="kb-add-btn" data-icon="plus" title="Ajouter une tâche ou un ticket ClickUp">Ticket</button><span id="kb-stats"></span></div>
           <div class="diff-tools">
             <button id="kb-reload" data-icon="refresh" title="Relire le fichier"></button>
             <button id="kb-close" data-icon="x" title="Fermer (⌘B)"></button>
           </div>
         </div>
+        <form id="kb-add" class="hidden">
+          <input placeholder="Titre de la tâche, ou ticket ClickUp (#86c0abc12, CICD-123, lien)…" spellcheck="false">
+          <div id="kb-add-msg" class="hidden"></div>
+        </form>
         <div id="kb-error" class="hidden"></div>
         <div id="kb-board"></div>
       </aside>

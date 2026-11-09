@@ -791,7 +791,6 @@ body.dragging-term .xterm { pointer-events: none; }
 .kb-col[data-status="review"] .kb-dot { background: var(--info); }
 .kb-col[data-status="done"] .kb-dot { background: var(--add); }
 .kb-count { margin-left: auto; font-weight: 400; }
-.kb-add input { width: 100%; font-size: 12px; padding: 5px 8px; }
 .kb-cards { display: flex; flex-direction: column; gap: 6px; min-height: 30px; flex: 1; }
 .kb-card { position: relative; padding: 7px 9px; border-radius: var(--r); background: var(--bg); border: 1px solid var(--border); cursor: grab; display: flex; flex-direction: column; gap: 4px; }
 .kb-card:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
@@ -815,9 +814,13 @@ body.dragging-term .xterm { pointer-events: none; }
 .kb-col.kb-drop-end .kb-cards::after { content: ""; height: 2px; border-radius: 2px; background: var(--accent); }
 .kb-card.flash { animation: kb-flash 2.2s ease-out; }
 @keyframes kb-flash { 0%, 30% { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
-#kb-board.readonly .kb-add, #kb-board.readonly .kb-tools button:not([data-a="send"]) { display: none; }
+#kb-board.readonly .kb-tools button:not([data-a="send"]) { display: none; }
 #kb-board.readonly .kb-card { cursor: default; }
-.kb-add-msg { margin-top: 4px; font-size: 11px; color: var(--muted); }
+#kb-add-btn { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; font-size: 12px; font-weight: 500; }
+#kb-add-btn .ic { width: 13px; height: 13px; }
+#kb-add { padding: 8px 10px 0; display: flex; flex-direction: column; gap: 4px; }
+#kb-add input { width: 100%; font-size: 12.5px; padding: 6px 9px; border-color: var(--accent); }
+#kb-add-msg { font-size: 11px; color: var(--muted); padding: 0 2px; }
 .kb-cu { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 10.5px; color: var(--muted); }
 .kb-cu span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kb-cu button { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; border: none; padding: 1px 5px; min-width: 0; min-height: 0; font-size: 10.5px; font-family: var(--mono); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 4px; }

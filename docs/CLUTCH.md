@@ -35,7 +35,7 @@ Un développeur qui travaille avec Claude Code jongle avec plusieurs projets (so
 ### Parcours type
 
 1. Le matin, clic sur le projet *jefacture* : Claude s'ouvre à la racine, un shell dans `front`, un `npm run dev` dans `back`, en disposition « 1 + pile ».
-2. `⌘B` ouvre le kanban du projet. Taper `CICD-42` dans « À faire » crée la carte à partir du ticket ClickUp (titre, description, priorité, échéance…).
+2. `⌘B` ouvre le kanban du projet. « + Ticket » puis `CICD-42` crée la carte à partir du ticket ClickUp (titre, description, priorité, échéance…).
 3. Clic sur la carte → choix du skill `ticket` et du projet → Entrée : une session Claude démarre avec `/ticket CICD-42 (tâche kanban t-…)`.
 4. Le skill fait passer la carte en « En cours », puis « À relire ». Le tableau se met à jour tout seul et fait briller la carte déplacée. Si la synchro est activée sur le projet, le ticket passe en « dev en cours », puis en « revue de code à faire », et les 47 minutes passées en « En cours » sont loggées dans ClickUp.
 5. Pendant ce temps, le diff s'ouvre à droite au fil des modifications. Quand Claude a fini, le son « Brise » retentit et l'onglet affiche une bulle : c'est à toi.
