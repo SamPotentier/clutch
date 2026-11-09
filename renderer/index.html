@@ -147,6 +147,17 @@
           <button type="button" data-l="main-top" title="Le premier terminal en haut, les autres côte à côte en bas" data-icon="main-top">1 + rangée</button>
         </div>
       </div>
+      <div class="launch">
+        <div class="launch-head">Synchro ClickUp <small>— les cartes liées à un ticket font avancer son statut et loggent le temps</small></div>
+        <label class="check"><input type="checkbox" name="cuEnabled"> Synchroniser le statut des tickets depuis le kanban</label>
+        <div id="cu-sync-fields" class="cu-sync">
+          <label>Statut « à faire »<input name="cuTodo" spellcheck="false"></label>
+          <label>Statut « dev en cours »<input name="cuInProgress" spellcheck="false"></label>
+          <label>Statut « revue de code »<input name="cuReview" spellcheck="false"></label>
+          <label class="check"><input type="checkbox" name="cuLogTime"> Logger le temps passé en « En cours » (à partir d'1 min)</label>
+          <div class="cu-check"><button type="button" id="btn-cu-check">Vérifier</button><span id="cu-check-result"></span></div>
+        </div>
+      </div>
       <label>Compte Claude<select name="account" id="preset-account"></select></label>
       <label>Couleur<div id="color-picker" class="colors"></div></label>
       <div class="dialog-actions">
@@ -223,6 +234,8 @@
       <div class="dialog-actions"><button type="button" data-close>Fermer</button></div>
     </form>
   </div>
+
+  <div id="toasts"></div>
 
   <div id="palette" class="overlay hidden">
     <div class="dialog palette">

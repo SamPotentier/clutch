@@ -828,3 +828,21 @@ body.dragging-term .xterm { pointer-events: none; }
 #cu-status.ok { color: var(--add); }
 #cu-status.err { color: var(--danger); }
 #settings .desc { -webkit-line-clamp: unset; display: block; }
+
+/* Synchro ClickUp */
+.cu-sync { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cu-sync .check, .cu-sync .cu-check { grid-column: 1 / -1; }
+.cu-sync.off { opacity: .45; }
+.cu-check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.cu-check button { font-size: 12px; flex-shrink: 0; }
+#cu-check-result.ok { color: var(--add); }
+#cu-check-result.err { color: var(--danger); }
+.kb-unsynced { flex-shrink: 0; font-style: normal; font-size: 10px; padding: 0 5px; border-radius: 4px; color: var(--danger); background: var(--del-bg); }
+.kb-timing { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+#toasts { position: fixed; right: 16px; bottom: 16px; z-index: 200; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; pointer-events: none; }
+.toast { pointer-events: auto; cursor: pointer; display: flex; align-items: center; gap: 8px; max-width: 420px; padding: 7px 12px; border-radius: var(--r2); font-size: 12px; background: var(--bg-3); border: 1px solid var(--border); color: var(--muted); box-shadow: var(--shadow); transition: opacity .4s; }
+.toast .ic { width: 14px; height: 14px; flex-shrink: 0; color: var(--add); }
+.toast.err { color: var(--text); border-color: var(--danger); }
+.toast.err .ic { color: var(--danger); }
+.toast.out { opacity: 0; }
+.dialog label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 12.5px; }

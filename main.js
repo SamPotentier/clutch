@@ -26,9 +26,15 @@ function migrateOldData() {
   fs.copyFileSync(old, dataFile());
 }
 
+// Clés de data.json tenues par le processus principal (file de synchro ClickUp) :
+// l'interface réécrit le fichier en entier sans les connaître, on les remet à chaque sauvegarde.
+const mainOwned = {};
 function saveData(data) {
   fs.mkdirSync(path.dirname(dataFile()), { recursive: true });
-  fs.writeFileSync(dataFile(), JSON.stringify(data, null, 2));
+  fs.writeFileSync(dataFile(), JSON.stringify({ ...data, ...mainOwned }, null, 2));
+}
+function saveMainOwned() {
+  saveData(loadData());
 }
 
 const expandHome = (p) => String(p || '').replace(/^~(?=$|\/)/, os.homedir());
@@ -418,7 +424,10 @@ function createPty({ cwd, cols, rows, command, configDir }) {
 }
 
 ipcMain.handle('data:load', () => loadData());
-ipcMain.handle('data:save', (_e, data) => saveData(data));
+ipcMain.handle('data:save', (_e, data) => {
+  saveData(data);
+  syncConfigChanged(data.presets);
+});
 ipcMain.handle('dialog:folder', async () => {
   const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
   return res.canceled ? null : res.filePaths[0];
@@ -454,23 +463,66 @@ function readKanban(dir) {
     return e.code === 'ENOENT' ? { tasks: [] } : { tasks: [], error: e.message };
   }
 }
-ipcMain.handle('kanban:read', (_e, dir) => readKanban(dir));
-ipcMain.handle('kanban:write', (_e, dir, tasks) => {
+function writeKanban(dir, tasks) {
   const file = kanbanFile(dir);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify({ version: 1, tasks }, null, 2) + '\n');
   fs.renameSync(tmp, file);
+}
+ipcMain.handle('kanban:read', (_e, dir) => {
+  const res = readKanban(dir);
+  if (!res.error) kanbanSnapshot(dir, res.tasks);
+  return res;
+});
+ipcMain.handle('kanban:write', (_e, dir, tasks) => {
+  // timing et les ids ClickUp récupérés à la volée sont tenus par main : une sauvegarde de
+  // l'interface faite avant d'avoir relu le fichier ne doit pas les effacer
+  const current = new Map(readKanban(dir).tasks.map((t) => [String(t.id), t]));
+  for (const t of tasks) {
+    const cur = current.get(String(t.id));
+    if (!cur) continue;
+    if (cur.timing) t.timing = cur.timing;
+    if (t.clickup && cur.clickup?.id === t.clickup.id) {
+      for (const k of ['teamId', 'listId']) if (cur.clickup[k] && !t.clickup[k]) t.clickup[k] = cur.clickup[k];
+    }
+  }
+  writeKanban(dir, tasks);
+  kanbanSnapshot(dir, tasks);
   return true;
 });
-// Surveillance par sondage : fonctionne même si le fichier n'existe pas encore ou est remplacé d'un bloc
-let kanbanWatched = null;
-ipcMain.on('kanban:watch', (_e, dir) => {
-  if (kanbanWatched) fs.unwatchFile(kanbanWatched);
-  kanbanWatched = dir ? kanbanFile(dir) : null;
-  if (kanbanWatched) {
-    fs.watchFile(kanbanWatched, { interval: 700 }, () => win && !win.isDestroyed() && win.webContents.send('kanban:changed', dir));
+
+// Surveillance par sondage : fonctionne même si le fichier n'existe pas encore ou est remplacé d'un bloc.
+// Un fichier est surveillé pour l'interface (projet affiché) et/ou pour la synchro ClickUp (presets activés).
+const kanbanWatches = new Map(); // fichier -> { dir, uiDir, sync }
+function setKanbanWatch(dir, role, on) {
+  const file = kanbanFile(dir);
+  let w = kanbanWatches.get(file);
+  if (on && !w) {
+    w = { dir, uiDir: null, sync: false };
+    kanbanWatches.set(file, w);
+    fs.watchFile(file, { interval: 700 }, () => kanbanFileChanged(file));
   }
+  if (!w) return;
+  if (role === 'ui') w.uiDir = on ? dir : null;
+  else w.sync = on;
+  if (!w.uiDir && !w.sync) {
+    fs.unwatchFile(file);
+    kanbanWatches.delete(file);
+  }
+}
+function kanbanFileChanged(file) {
+  const w = kanbanWatches.get(file);
+  if (!w) return;
+  const res = readKanban(w.dir);
+  if (!res.error) kanbanSnapshot(w.dir, res.tasks);
+  if (w.uiDir && win && !win.isDestroyed()) win.webContents.send('kanban:changed', w.uiDir);
+}
+let kanbanUiDir = null;
+ipcMain.on('kanban:watch', (_e, dir) => {
+  if (kanbanUiDir) setKanbanWatch(kanbanUiDir, 'ui', false);
+  kanbanUiDir = dir || null;
+  if (kanbanUiDir) setKanbanWatch(kanbanUiDir, 'ui', true);
 });
 /* ---------- ClickUp ---------- */
 // La clé API est chiffrée avec le trousseau macOS (safeStorage) et ne repasse jamais par l'interface.
@@ -566,6 +618,8 @@ async function clickupTask(ref) {
         tags: (task.tags || []).map((t) => t.name),
         due: day(task.due_date),
         list: task.list?.name,
+        listId: task.list?.id,
+        teamId: task.team_id,
         subtasks: (task.subtasks || []).map((t) => ({ name: t.name, status: t.status?.status })),
         checklists: (task.checklists || []).map((c) => ({ name: c.name, items: (c.items || []).map((i) => ({ name: i.name, done: !!i.resolved })) })),
       },
@@ -575,6 +629,226 @@ async function clickupTask(ref) {
   }
 }
 ipcMain.handle('clickup:task', (_e, ref) => clickupTask(ref));
+
+/* ---------- Synchro ClickUp depuis le kanban ---------- */
+// Les changements de colonne du kanban (interface, skill Claude ou glisser-déposer) font avancer
+// le ticket ClickUp lié et loggent le temps passé en « En cours ». Jamais de recul, jamais de commentaire.
+
+const SYNC_DEFAULTS = { enabled: false, todo: 'à faire', inProgress: 'dev en cours', review: 'revue de code à faire', logTime: true };
+const SYNC_MIN_MS = 60 * 1000;
+const SYNC_BACKOFF = [30, 120, 600, 1800, 3600].map((s) => s * 1000);
+// Mêmes alias que l'interface : un skill peut écrire « doing », « en cours »…
+const KB_ALIASES = { todo: 'todo', afaire: 'todo', backlog: 'todo', inprogress: 'in_progress', doing: 'in_progress', encours: 'in_progress', wip: 'in_progress', review: 'review', toreview: 'review', inreview: 'review', arelire: 'review', done: 'done', fait: 'done', termine: 'done' };
+const kbStatus = (s) => KB_ALIASES[String(s || '').normalize('NFD').replace(/[^a-z]/gi, '').toLowerCase()] || 'todo';
+// Noms de statuts ClickUp comparés sans casse, accents ni espaces en trop
+const sameStatus = (a, b) => {
+  const n = (x) => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return n(a) === n(b);
+};
+const projectKey = (dir) => path.resolve(expandHome(dir));
+
+let syncPresets = [];
+const syncTables = new Map(); // projet -> Map(id de tâche -> statut lu en dernier)
+let syncQueue = [];
+let syncLogged = []; // clés « taskId:startedAt » des entrées de temps déjà créées
+let syncTimer = null;
+const syncStarted = new Map(); // « projet:tâche » -> startedAt, au cas où un skill réécrit la carte sans timing
+let syncRunning = false;
+
+function syncConfig(dir) {
+  const key = projectKey(dir);
+  const p = syncPresets.find((x) => x.clickupSync?.enabled && x.cwd && projectKey(x.cwd) === key);
+  return p ? { ...SYNC_DEFAULTS, ...p.clickupSync, cwd: p.cwd } : null;
+}
+
+// Les presets ont changé : on surveille le kanban de chaque projet synchronisé, panneau ouvert ou non
+function syncConfigChanged(presets) {
+  syncPresets = Array.isArray(presets) ? presets : [];
+  const wanted = new Set(syncPresets.filter((p) => p.clickupSync?.enabled && p.cwd).map((p) => kanbanFile(p.cwd)));
+  for (const [file, w] of kanbanWatches) if (w.sync && !wanted.has(file)) setKanbanWatch(w.dir, 'sync', false);
+  for (const p of syncPresets) {
+    if (!p.clickupSync?.enabled || !p.cwd || kanbanWatches.get(kanbanFile(p.cwd))?.sync) continue;
+    setKanbanWatch(p.cwd, 'sync', true);
+    // Premier chargement : la table est initialisée sans rien déclencher
+    const res = readKanban(p.cwd);
+    if (!res.error) kanbanSnapshot(p.cwd, res.tasks);
+  }
+}
+
+// Appelée après chaque lecture ou écriture du kanban : compare aux statuts connus et déclenche la synchro.
+// La table est mise à jour avant tout appel réseau : une relecture de la même écriture (watchFile)
+// ne voit plus de différence, une transition ne part donc qu'une fois.
+function kanbanSnapshot(dir, tasks) {
+  const key = projectKey(dir);
+  const prev = syncTables.get(key);
+  syncTables.set(key, new Map(tasks.filter((t) => t?.id != null).map((t) => [String(t.id), kbStatus(t.status)])));
+  const cfg = prev && syncConfig(dir);
+  if (!cfg) return;
+  for (const t of tasks) {
+    if (t?.id == null || !t.clickup?.id) continue;
+    const from = prev.get(String(t.id));
+    const to = kbStatus(t.status);
+    if (from && from !== to) syncTransition(cfg, dir, t, from, to);
+  }
+}
+
+// Modifie une carte directement dans le fichier (écriture atomique). Les statuts ne changent pas,
+// la relecture qui suit ne crée donc pas de transition. fn renvoie false pour ne rien écrire.
+function patchKanbanTask(dir, taskId, fn) {
+  const res = readKanban(dir);
+  if (res.error) return null;
+  const t = res.tasks.find((x) => String(x.id) === String(taskId));
+  if (!t || fn(t) === false) return t || null;
+  writeKanban(dir, res.tasks);
+  kanbanSnapshot(dir, res.tasks);
+  return t;
+}
+
+function syncTransition(cfg, dir, task, from, to) {
+  const base = { project: cfg.cwd, dir, taskId: String(task.id), clickupId: task.clickup.id, ref: task.clickup.customId || task.clickup.id };
+  const now = Date.now();
+  if (to === 'in_progress') {
+    const startedAt = new Date(now).toISOString();
+    syncStarted.set(`${projectKey(dir)}:${task.id}`, startedAt);
+    patchKanbanTask(dir, task.id, (t) => { t.timing = { loggedMs: 0, ...t.timing, startedAt }; });
+    if (from === 'todo') enqueueSync({ ...base, kind: 'status', allowed: [cfg.todo], target: cfg.inProgress });
+  } else if (from === 'in_progress' && to === 'review') {
+    enqueueSync({ ...base, kind: 'status', allowed: [cfg.todo, cfg.inProgress], target: cfg.review });
+    const startedAt = task.timing?.startedAt || syncStarted.get(`${projectKey(dir)}:${task.id}`);
+    syncStarted.delete(`${projectKey(dir)}:${task.id}`);
+    if (!startedAt) return;
+    const start = Date.parse(startedAt);
+    const duration = now - start;
+    // Le segment est clos tout de suite ; loggedMs n'augmente qu'une fois l'entrée créée dans ClickUp
+    patchKanbanTask(dir, task.id, (t) => { t.timing = { loggedMs: 0, ...t.timing, startedAt: null }; });
+    if (cfg.logTime && duration >= SYNC_MIN_MS) {
+      enqueueSync({ ...base, kind: 'time', teamId: task.clickup.teamId, start, duration, key: `${task.id}:${startedAt}` });
+    }
+  }
+}
+
+function enqueueSync(action) {
+  syncQueue.push({ ...action, id: Math.random().toString(36).slice(2, 10), tries: 0, next: 0 });
+  persistSyncQueue();
+  runSyncQueue();
+}
+
+function persistSyncQueue() {
+  mainOwned.clickupQueue = syncQueue;
+  syncLogged = syncLogged.slice(-500);
+  mainOwned.clickupLogged = syncLogged;
+  saveMainOwned();
+}
+
+function syncNotify(a, ok, extra = {}) {
+  if (win && !win.isDestroyed()) win.webContents.send('clickup:sync', { project: a.project, taskId: a.taskId, ref: a.ref, action: a.kind, ok, ...extra });
+}
+
+// Équipe et liste de la carte : stockées à l'import, sinon récupérées une fois et sauvegardées
+function rememberIds(a, task) {
+  const ids = { teamId: task.team_id, listId: task.list?.id };
+  patchKanbanTask(a.dir, a.taskId, (t) => {
+    const missing = Object.keys(ids).filter((k) => ids[k] && t.clickup?.id === a.clickupId && !t.clickup[k]);
+    missing.forEach((k) => { t.clickup[k] = ids[k]; });
+    return missing.length > 0;
+  });
+  return ids;
+}
+
+async function clickupSend(token, method, route, body) {
+  const res = await fetch(`https://api.clickup.com/api/v2/${route}`, {
+    method, headers: { Authorization: token, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(json.err || `ClickUp a répondu ${res.status}`), { status: res.status });
+  return json;
+}
+
+async function runSyncAction(a, token) {
+  const task = await clickupGet(token, `task/${encodeURIComponent(a.clickupId)}`);
+  const ids = rememberIds(a, task);
+  if (a.kind === 'status') {
+    // Relu juste avant d'écrire : on n'avance que depuis un statut attendu, sinon on ne touche à rien
+    const current = task.status?.status;
+    if (!a.allowed.some((s) => sameStatus(s, current))) return { skipped: true, detail: `déjà « ${current} », inchangé` };
+    await clickupSend(token, 'PUT', `task/${encodeURIComponent(a.clickupId)}`, { status: a.target });
+    return { detail: `→ ${a.target}` };
+  }
+  if (syncLogged.includes(a.key)) return { skipped: true, detail: 'temps déjà loggé' };
+  const teamId = a.teamId || ids.teamId;
+  if (!teamId) throw Object.assign(new Error('Espace de travail du ticket inconnu'), { status: 400 });
+  await clickupSend(token, 'POST', `team/${encodeURIComponent(teamId)}/time_entries`, { tid: a.clickupId, start: a.start, duration: a.duration });
+  syncLogged.push(a.key);
+  patchKanbanTask(a.dir, a.taskId, (t) => { t.timing = { startedAt: null, ...t.timing, loggedMs: (t.timing?.loggedMs || 0) + a.duration }; });
+  return { detail: `${Math.round(a.duration / 60000)} min loggées` };
+}
+
+// Réseau coupé, 429 ou erreur serveur : on retentera. Le reste (clé refusée, ticket supprimé…) est abandonné.
+const retryable = (e) => !e.status || e.status === 429 || e.status >= 500;
+
+async function runSyncQueue() {
+  if (syncRunning) return;
+  syncRunning = true;
+  clearTimeout(syncTimer);
+  try {
+    for (;;) {
+      const a = syncQueue.find((x) => x.next <= Date.now());
+      if (!a) break;
+      const token = clickupToken();
+      let result = null;
+      let error = null;
+      try {
+        if (!token) throw Object.assign(new Error('Ajoute ta clé ClickUp dans les paramètres'), { status: 401 });
+        result = await runSyncAction(a, token);
+      } catch (e) {
+        error = e;
+      }
+      if (error && retryable(error)) {
+        const wait = SYNC_BACKOFF[Math.min(a.tries, SYNC_BACKOFF.length - 1)];
+        a.tries++;
+        a.next = Date.now() + wait;
+        syncNotify(a, false, { error: `${error.message} — nouvelle tentative dans ${Math.round(wait / 60000) || 1} min`, queued: true });
+      } else {
+        syncQueue = syncQueue.filter((x) => x !== a);
+        if (error) syncNotify(a, false, { error: error.message });
+        else syncNotify(a, true, result);
+      }
+      persistSyncQueue();
+    }
+  } finally {
+    syncRunning = false;
+  }
+  const next = Math.min(...syncQueue.map((x) => x.next));
+  if (Number.isFinite(next)) syncTimer = setTimeout(runSyncQueue, Math.max(1000, next - Date.now()));
+}
+
+// Bouton « Vérifier » du preset : statuts de la liste d'une carte liée, et noms introuvables
+ipcMain.handle('clickup:check-statuses', async (_e, dir, names) => {
+  const token = clickupToken();
+  if (!token) return { error: 'Ajoute ta clé ClickUp dans les paramètres' };
+  const card = readKanban(dir).tasks.find((t) => t.clickup?.id);
+  if (!card) return { error: 'Aucune carte liée à ClickUp dans le kanban de ce projet' };
+  try {
+    let listId = card.clickup.listId;
+    if (!listId) listId = rememberIds({ dir, taskId: card.id, clickupId: card.clickup.id }, await clickupGet(token, `task/${encodeURIComponent(card.clickup.id)}`)).listId;
+    const list = await clickupGet(token, `list/${encodeURIComponent(listId)}`);
+    const statuses = (list.statuses || []).map((x) => x.status);
+    return { list: list.name, statuses, missing: names.filter((n) => !statuses.some((x) => sameStatus(x, n))) };
+  } catch (e) {
+    return { error: e.message };
+  }
+});
+
+// Démarrage : config des presets, surveillance, et reprise de la file laissée par la session précédente
+function startClickupSync() {
+  const data = loadData();
+  syncQueue = Array.isArray(data.clickupQueue) ? data.clickupQueue.map((a) => ({ ...a, next: 0 })) : [];
+  syncLogged = Array.isArray(data.clickupLogged) ? data.clickupLogged : [];
+  mainOwned.clickupQueue = syncQueue;
+  mainOwned.clickupLogged = syncLogged;
+  syncConfigChanged(data.presets);
+  if (syncQueue.length) setTimeout(runSyncQueue, 3000);
+}
 // Mises à jour : l'app installée connaît son dossier de sources et le commit dont elle est issue (source.json).
 // Une mise à jour est disponible si le dépôt distant a de nouveaux commits, ou si les sources locales ont avancé.
 function buildInfo() {
@@ -721,6 +995,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   migrateOldData();
+  startClickupSync();
   buildMenu();
   createWindow();
   app.on('activate', () => (win && !win.isDestroyed() ? win.show() : createWindow()));

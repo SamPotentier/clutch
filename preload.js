@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('api', {
   clickupStatus: () => ipcRenderer.invoke('clickup:status'),
   clickupSetToken: (token) => ipcRenderer.invoke('clickup:set-token', token),
   clickupTask: (ref) => ipcRenderer.invoke('clickup:task', ref),
+  clickupCheckStatuses: (dir, names) => ipcRenderer.invoke('clickup:check-statuses', dir, names),
+  onClickupSync: (cb) => ipcRenderer.on('clickup:sync', (_e, ev) => cb(ev)),
   kanbanRead: (dir) => ipcRenderer.invoke('kanban:read', dir),
   kanbanWrite: (dir, tasks) => ipcRenderer.invoke('kanban:write', dir, tasks),
   kanbanWatch: (dir) => ipcRenderer.send('kanban:watch', dir),

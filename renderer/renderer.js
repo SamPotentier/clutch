@@ -808,6 +808,14 @@ function openPresetModal(p) {
   $('#preset-account').innerHTML = accountOptions(p ? p.accountId : state.account) + '<option value="__add">+ Ajouter un compte…</option>';
   pickedColor = p?.color || COLORS[state.presets.length % COLORS.length];
   renderColors();
+  const cu = { ...CU_SYNC_DEFAULTS, ...p?.clickupSync };
+  f.cuEnabled.checked = cu.enabled;
+  f.cuTodo.value = cu.todo;
+  f.cuInProgress.value = cu.inProgress;
+  f.cuReview.value = cu.review;
+  f.cuLogTime.checked = cu.logTime;
+  $('#cu-check-result').textContent = '';
+  renderCuSync();
   $('#modal').classList.remove('hidden');
   f.name.focus();
 }
@@ -887,6 +895,25 @@ $('#btn-add-subs').onclick = async () => {
 };
 $('#preset-form').cwd.addEventListener('change', loadModalSubdirs);
 
+/* Synchro ClickUp du preset (appliquée par le processus principal) */
+const CU_SYNC_DEFAULTS = { enabled: false, todo: 'à faire', inProgress: 'dev en cours', review: 'revue de code à faire', logTime: true };
+const renderCuSync = () => $('#cu-sync-fields').classList.toggle('off', !$('#preset-form').cuEnabled.checked);
+$('#preset-form').cuEnabled.addEventListener('change', renderCuSync);
+function formCuSync(f) {
+  return { enabled: f.cuEnabled.checked, todo: f.cuTodo.value.trim(), inProgress: f.cuInProgress.value.trim(), review: f.cuReview.value.trim(), logTime: f.cuLogTime.checked };
+}
+$('#btn-cu-check').onclick = async () => {
+  const f = $('#preset-form');
+  const out = $('#cu-check-result');
+  const cu = formCuSync(f);
+  out.className = '';
+  out.textContent = 'Vérification…';
+  const res = await api.clickupCheckStatuses(f.cwd.value.trim(), [cu.todo, cu.inProgress, cu.review]);
+  out.className = res.error || res.missing.length ? 'err' : 'ok';
+  out.textContent = res.error
+    || (res.missing.length ? `Introuvable dans « ${res.list} » : ${res.missing.join(', ')}. Statuts de la liste : ${res.statuses.join(', ')}` : `Les trois statuts existent dans « ${res.list} »`);
+};
+
 const closeModal = () => { $('#modal').classList.add('hidden'); focusActive(); };
 
 $('#preset-form').onsubmit = (e) => {
@@ -896,6 +923,9 @@ $('#preset-form').onsubmit = (e) => {
   // `command` reste la commande principale (celle utilisée pour lancer un skill sur le projet)
   const main = panes.find((x) => isClaudeCmd(x.cmd)) || panes[0];
   const data = { name: f.name.value.trim(), cwd: f.cwd.value.trim(), command: main.cmd, panes, layout: modalLayout, color: pickedColor, accountId: f.account.value === '__add' ? '' : f.account.value };
+  const cu = formCuSync(f);
+  // Synchro désactivée et réglages par défaut : rien d'enregistré, le preset reste comme avant
+  if (cu.enabled || editing?.clickupSync || Object.keys(CU_SYNC_DEFAULTS).some((k) => k !== 'enabled' && cu[k] !== CU_SYNC_DEFAULTS[k])) data.clickupSync = cu;
   if (editing) Object.assign(editing, data);
   else state.presets.push({ id: uid(), ...data });
   if (data.accountId !== state.account) renderSpaceSwitch();
@@ -1447,6 +1477,19 @@ $('#diff-resizer').addEventListener('mousedown', (e) => {
   window.addEventListener('mousemove', move);
   window.addEventListener('mouseup', up);
 });
+
+/* ---------- Notifications ---------- */
+
+// Discrète par défaut ; une erreur reste plus longtemps et se ferme d'un clic
+function toast(text, kind = '') {
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.innerHTML = `${kind === 'err' ? icon('x') : icon('check')}<span>${esc(text)}</span>`;
+  el.onclick = () => el.remove();
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.classList.add('out'), kind === 'err' ? 9000 : 2500);
+  setTimeout(() => el.remove(), kind === 'err' ? 9400 : 2900);
+}
 
 /* ---------- Paramètres ---------- */
 

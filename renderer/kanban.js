@@ -12,7 +12,7 @@ const KB_COLS = [
 const KB_ALIASES = { todo: 'todo', afaire: 'todo', backlog: 'todo', inprogress: 'in_progress', doing: 'in_progress', encours: 'in_progress', wip: 'in_progress', review: 'review', toreview: 'review', inreview: 'review', arelire: 'review', done: 'done', fait: 'done', termine: 'done' };
 const kbStatus = (s) => KB_ALIASES[String(s || '').normalize('NFD').replace(/[^a-z]/gi, '').toLowerCase()] || 'todo';
 
-const kb = { dir: '', tasks: [], error: '', loaded: false, seen: new Map(), editing: null, dragId: null, flash: new Map(), adding: false, addMsg: '' };
+const kb = { dir: '', tasks: [], error: '', loaded: false, seen: new Map(), editing: null, dragId: null, flash: new Map(), adding: false, addMsg: '', unsynced: new Map() };
 // Numéro de ticket ClickUp : #86c0abc12, CICD-123 ou un lien app.clickup.com/t/…
 const KB_TICKET = /^(#\S+|[A-Za-z][\w]*-\d+|https?:\/\/(app\.)?clickup\.com\/t\/\S+)$/;
 
@@ -101,11 +101,12 @@ function kbCard(t) {
   }
   const flash = Date.now() - (kb.flash.get(t.id) || 0) < 2500 ? ' flash' : '';
   return `<div class="kb-card${flash}" draggable="true" data-id="${esc(t.id)}" title="Clic pour lancer un skill sur cette tâche · glisse pour changer de colonne">
-    ${t.clickup ? kbClickupLine(t.clickup) : ''}
+    ${t.clickup ? kbClickupLine(t) : ''}
     <div class="kb-title">${esc(t.title)}</div>
     ${t.description ? `<div class="kb-desc">${esc(t.description)}</div>` : ''}
     <div class="kb-meta">
       <span class="kb-time" title="${esc(t.updated || '')}">${esc(kbAgo(t.updated || t.created))}</span>
+      ${kbTiming(t)}
       <span class="kb-tools">
         ${t.clickup ? `<button type="button" data-a="cu-refresh" title="Recharger depuis ClickUp">${icon('refresh')}</button>` : ''}
         <button type="button" data-a="send" title="Envoyer la tâche au terminal actif">${icon('send')}</button>
@@ -116,10 +117,35 @@ function kbCard(t) {
   </div>`;
 }
 
-function kbClickupLine(cu) {
+function kbClickupLine(t) {
+  const cu = t.clickup;
   const bits = [cu.status, cu.priority && `priorité ${cu.priority}`, cu.due && `échéance ${cu.due}`, cu.assignees?.length && cu.assignees.join(', ')].filter(Boolean);
-  return `<div class="kb-cu"><button type="button" data-a="cu-open" title="Ouvrir dans ClickUp">${icon('link')}${esc(cu.customId || cu.id)}</button><span>${esc(bits.join(' · '))}</span></div>`;
+  const err = kb.unsynced.get(kbSyncKey(kb.dir, t.id));
+  return `<div class="kb-cu"><button type="button" data-a="cu-open" title="Ouvrir dans ClickUp">${icon('link')}${esc(cu.customId || cu.id)}</button>${err ? `<em class="kb-unsynced" title="${esc(err)}">non synchronisé</em>` : ''}<span>${esc(bits.join(' · '))}</span></div>`;
 }
+
+// Temps déjà loggé dans ClickUp, et chrono en cours pour une carte « En cours »
+function kbTiming(t) {
+  const ms = t.timing?.loggedMs || 0;
+  if (!ms && !t.timing?.startedAt) return '';
+  const fmt = (x) => (x >= 3600000 ? `${Math.floor(x / 3600000)} h ${String(Math.round((x % 3600000) / 60000)).padStart(2, '0')}` : `${Math.round(x / 60000)} min`);
+  return `<span class="kb-timing" title="Temps loggé dans ClickUp${t.timing?.startedAt ? ' · chrono en cours' : ''}">${ms ? fmt(ms) : ''}${t.timing?.startedAt ? ' ●' : ''}</span>`;
+}
+
+/* Retours de la synchro ClickUp (faite par le processus principal) */
+const kbSyncKey = (dir, taskId) => `${dir}\n${taskId}`;
+api.onClickupSync((ev) => {
+  const key = kbSyncKey(ev.project, ev.taskId);
+  const what = ev.action === 'time' ? 'temps' : 'statut';
+  if (ev.ok) {
+    kb.unsynced.delete(key);
+    toast(`ClickUp ${ev.ref} : ${ev.detail || what + ' synchronisé'}`);
+  } else {
+    kb.unsynced.set(key, ev.error);
+    toast(`ClickUp ${ev.ref} non synchronisé (${what}) : ${ev.error}`, 'err');
+  }
+  if (ev.project === kb.dir) renderKanban();
+});
 
 function renderKanban() {
   const board = $('#kb-board');
