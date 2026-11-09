@@ -229,8 +229,15 @@ ipcMain.handle('git:track', async (_e, cwd) => {
   return repos.length ? { repos } : null;
 });
 ipcMain.on('git:untrack', (_e, root) => gitUnwatch(root));
+// Branche courante ; en HEAD détaché, le commit abrégé
+async function gitBranch(root) {
+  const name = (await git(root, ['rev-parse', '--abbrev-ref', 'HEAD']))?.trim();
+  if (name && name !== 'HEAD') return name;
+  return (await git(root, ['rev-parse', '--short', 'HEAD']))?.trim() || '';
+}
+
 ipcMain.handle('git:diff', (_e, repos, sinceBaseline) =>
-  Promise.all(repos.map(async (r) => ({ name: r.name, patch: await gitDiff(r.root, sinceBaseline ? r : null) }))));
+  Promise.all(repos.map(async (r) => ({ name: r.name, branch: await gitBranch(r.root), patch: await gitDiff(r.root, sinceBaseline ? r : null) }))));
 
 /* ---------- Sessions Claude en mode conversation (stream-json) ---------- */
 

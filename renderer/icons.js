@@ -9,6 +9,7 @@ const ICONS = {
   refresh: '<path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.9 1 6.7 2.7L21 8"/><path d="M21 3v5h-5"/>',
   history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>',
   diff: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M11 18H8a2 2 0 0 1-2-2V9"/>',
+  branch: '<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
   tabs: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/>',
   cols: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/>',
   rows: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18"/>',

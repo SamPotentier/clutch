@@ -1350,6 +1350,7 @@ async function loadDiff() {
   }
   const patches = await api.gitDiff(t.git.repos, state.diff.scope === 'session');
   if (seq !== diffSeq) return;
+  t.branches = patches.filter((p) => p.branch).map((p) => ({ name: p.name, branch: p.branch }));
   // Plusieurs dépôts (ex. front/ et back/) : chaque chemin est préfixé par son dépôt
   const files = patches.flatMap(({ name, patch }) =>
     parseDiff(patch).map((f) => ({ ...f, repo: name, path: name ? `${name}/${f.path}` : f.path })));
@@ -1394,6 +1395,9 @@ const ln = (n) => `<td class="ln">${n ?? ''}</td>`;
 
 function renderDiff(t, files) {
   $('#diff-project').textContent = t ? t.title : '';
+  const branches = (t?.git && t.branches) || [];
+  $('#diff-branch').innerHTML = branches.map((b) => `${icon('branch')}${b.name ? `<span class="repo">${esc(b.name)}</span> ` : ''}${esc(b.branch)}`).join(' ');
+  $('#diff-branch').title = branches.map((b) => (b.name ? `${b.name} : ` : '') + b.branch).join('\n');
   const body = $('#diff-body');
   const list = $('#diff-files');
   const scrollTop = body.scrollTop;
