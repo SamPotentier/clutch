@@ -88,7 +88,7 @@ const state = { theme: 'nuit', accounts: [], account: '', defaultName: 'Pro', la
   bg: { kind: '', color: '#1e2a44', image: '', imageName: '', opacity: 78, blur: 0 },
   sound: { name: 'carillon', volume: 60 },
   kanban: { open: false, width: 640, presetId: '' }, side: { width: 640 },
-  inbox: { open: false, statuses: ['nouveau', 'à faire', 'rejeté'], sources: [], dismissed: [] } };
+  inbox: { open: false, statuses: ['nouveau', 'à faire', 'rejeté'], mineStatuses: ['dev en cours'], sources: [], dismissed: [] } };
 const byPty = new Map(); // ptyId -> tab
 
 function persist() {
@@ -98,7 +98,7 @@ function persist() {
     diff: { scope: state.diff.scope, auto: state.diff.auto },
     side: { width: state.side.width },
     kanban: { open: state.kanban.open, presetId: state.kanban.presetId, lastSkill: state.kanban.lastSkill },
-    inbox: { open: state.inbox.open, statuses: state.inbox.statuses, sources: state.inbox.sources, dismissed: state.inbox.dismissed },
+    inbox: { open: state.inbox.open, statuses: state.inbox.statuses, mineStatuses: state.inbox.mineStatuses, sources: state.inbox.sources, dismissed: state.inbox.dismissed },
   });
 }
 

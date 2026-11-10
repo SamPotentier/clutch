@@ -909,8 +909,9 @@ ipcMain.handle('clickup:hierarchy', async () => {
 const INBOX_MAX_PAGES = 10;
 const INBOX_PARAM = { space: 'space_ids[]', folder: 'project_ids[]', list: 'list_ids[]' };
 
-// sources : [{ kind: 'space' | 'folder' | 'list', id, teamId }] ; statuses : noms comparés sans accents
-ipcMain.handle('clickup:inbox', async (_e, sources, statuses) => {
+// sources : [{ kind: 'space' | 'folder' | 'list', id, teamId }] ; statuses : à trier (personne ou moi),
+// mineStatuses : gardés seulement s'ils me sont assignés (dev en cours…). Noms comparés sans accents.
+ipcMain.handle('clickup:inbox', async (_e, sources, statuses, mineStatuses = []) => {
   const token = clickupToken();
   if (!token) return { error: 'Ajoute ta clé ClickUp dans les paramètres' };
   try {
@@ -926,7 +927,8 @@ ipcMain.handle('clickup:inbox', async (_e, sources, statuses) => {
         // Les statuts ne sont pas filtrés côté ClickUp : leur nom exact varie d'une liste à l'autre
         for (const t of res.tasks || []) {
           const mine = (t.assignees || []).some((a) => a.id === me);
-          if (!statuses.some((x) => sameStatus(x, t.status?.status)) || (t.assignees?.length && !mine)) continue;
+          const is = (names) => names.some((x) => sameStatus(x, t.status?.status));
+          if (!(is(statuses) && (mine || !t.assignees?.length)) && !(mine && is(mineStatuses))) continue;
           found.set(t.id, {
             id: t.id,
             customId: t.custom_id || undefined,

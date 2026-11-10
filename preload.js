@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   clickupTask: (ref) => ipcRenderer.invoke('clickup:task', ref),
   clickupCheckStatuses: (dir, names) => ipcRenderer.invoke('clickup:check-statuses', dir, names),
   clickupHierarchy: () => ipcRenderer.invoke('clickup:hierarchy'),
-  clickupInbox: (sources, statuses) => ipcRenderer.invoke('clickup:inbox', sources, statuses),
+  clickupInbox: (sources, statuses, mineStatuses) => ipcRenderer.invoke('clickup:inbox', sources, statuses, mineStatuses),
   clickupAssignMe: (taskId) => ipcRenderer.invoke('clickup:assign-me', taskId),
   onClickupSync: (cb) => ipcRenderer.on('clickup:sync', (_e, ev) => cb(ev)),
   kanbanRead: (dir) => ipcRenderer.invoke('kanban:read', dir),

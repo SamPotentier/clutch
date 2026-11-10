@@ -37,7 +37,7 @@ async function loadInbox(force) {
     renderInbox();
   }
   const [res, board] = await Promise.all([
-    refetch && state.inbox.sources.length ? api.clickupInbox(state.inbox.sources, state.inbox.statuses) : null,
+    refetch && state.inbox.sources.length ? api.clickupInbox(state.inbox.sources, state.inbox.statuses, state.inbox.mineStatuses) : null,
     dir ? api.kanbanRead(dir) : { tasks: [] },
   ]);
   if (seq !== ib.seq) return;
@@ -171,6 +171,7 @@ let ibTree = null; // arborescence lue une fois par session (⟳ pour la relire)
 
 async function openInboxSettings(reload) {
   $('#ib-statuses').value = state.inbox.statuses.join(', ');
+  $('#ib-mine-statuses').value = state.inbox.mineStatuses.join(', ');
   renderIbSourceCount();
   const el = $('#ib-tree');
   if (ibTree && !reload) return renderIbTree();
@@ -233,17 +234,20 @@ $('#ib-tree').addEventListener('change', (e) => {
 $('#ib-tree').addEventListener('click', (e) => {
   if (e.target.closest('[data-a="tree-reload"]')) openInboxSettings(true);
 });
-$('#ib-statuses').addEventListener('change', (e) => {
-  const list = e.target.value.split(',').map((x) => x.trim()).filter(Boolean);
-  state.inbox.statuses = list.length ? list : ['nouveau', 'à faire', 'rejeté'];
-  e.target.value = state.inbox.statuses.join(', ');
-  persist();
-  if (state.inbox.open) loadInbox(true);
-});
-// Entrée dans le champ des statuts ne doit pas soumettre la clé ClickUp
-$('#ib-statuses').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
-});
+// Les statuts à trier reviennent aux valeurs par défaut si on vide le champ ; ceux « assigné à moi » peuvent rester vides
+for (const [sel, key, fallback] of [['#ib-statuses', 'statuses', ['nouveau', 'à faire', 'rejeté']], ['#ib-mine-statuses', 'mineStatuses', []]]) {
+  $(sel).addEventListener('change', (e) => {
+    const list = e.target.value.split(',').map((x) => x.trim()).filter(Boolean);
+    state.inbox[key] = list.length ? list : fallback;
+    e.target.value = state.inbox[key].join(', ');
+    persist();
+    if (state.inbox.open) loadInbox(true);
+  });
+  // Entrée dans le champ ne doit pas soumettre la clé ClickUp
+  $(sel).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+  });
+}
 
 function initInbox() {
   if (state.inbox.open && !state.kanban.open && !state.diff.open) setInboxOpen(true);

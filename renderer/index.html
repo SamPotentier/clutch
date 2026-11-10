@@ -255,8 +255,9 @@
       </div>
       <div class="settings-sec">
         <div class="settings-head">Inbox ClickUp <span id="ib-src-count"></span></div>
-        <div class="desc">ClickUp ne partage pas son Inbox par l'API : l'onglet Inbox du panneau de droite liste les tickets ouverts des projets cochés ici, dans l'un des statuts ci-dessous, sans personne d'assigné ou assignés à toi. Cocher un espace ou un dossier inclut tout ce qu'il contient.</div>
-        <label>Statuts à trier<input id="ib-statuses" placeholder="nouveau, à faire, rejeté" spellcheck="false"></label>
+        <div class="desc">ClickUp ne partage pas son Inbox par l'API : l'onglet Inbox du panneau de droite liste les tickets ouverts des projets cochés ici, dans l'un des statuts à trier sans personne d'assigné ou assignés à toi, et ceux des statuts où tu es assigné. Cocher un espace ou un dossier inclut tout ce qu'il contient.</div>
+        <label>Statuts à trier (personne d'assigné ou toi)<input id="ib-statuses" placeholder="nouveau, à faire, rejeté" spellcheck="false"></label>
+        <label>Statuts où tu es assigné<input id="ib-mine-statuses" placeholder="dev en cours" spellcheck="false"></label>
         <div id="ib-tree"></div>
       </div>
       <div class="dialog-actions"><button type="button" data-close>Fermer</button></div>
