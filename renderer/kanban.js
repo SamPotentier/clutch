@@ -33,6 +33,7 @@ function kanbanFollow(tab) {
   if (tab?.presetId && spacePresets().some((p) => p.id === tab.presetId)) state.kanban.presetId = tab.presetId;
   else if (!kbPreset()) state.kanban.presetId = spacePresets()[0]?.id || '';
   if (state.kanban.open) loadKanban();
+  if (state.inbox.open) loadInbox();
 }
 
 function setKanbanOpen(open) {
@@ -41,6 +42,7 @@ function setKanbanOpen(open) {
     if (activeTab()) activeTab().diffDismissed = true;
     setDiffOpen(false);
   }
+  if (open && state.inbox.open) setInboxOpen(false);
   state.kanban.open = open;
   $('#kanban-panel').classList.toggle('hidden', !open);
   $('#btn-kanban').classList.toggle('on', open);
@@ -89,7 +91,7 @@ async function saveKanban() {
 
 function renderKbProjects() {
   const presets = spacePresets();
-  $('#kb-project').innerHTML = presets.length
+  $('#kb-project').innerHTML = $('#ib-project').innerHTML = presets.length
     ? presets.map((p) => `<option value="${p.id}"${p.id === state.kanban.presetId ? ' selected' : ''}>${esc(p.name)}</option>`).join('')
     : '<option value="">Aucun projet</option>';
 }

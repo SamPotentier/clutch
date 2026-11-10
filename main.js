@@ -868,6 +868,104 @@ ipcMain.handle('clickup:check-statuses', async (_e, dir, names) => {
   }
 });
 
+/* ---------- Inbox ClickUp ---------- */
+// ClickUp n'expose pas son Inbox dans l'API : on la reconstitue à partir des espaces, dossiers et
+// listes choisis dans les paramètres. Tickets ouverts dans un statut d'entrée (nouveau, à faire…),
+// sans personne d'assigné ou assignés à moi.
+let clickupMe = null; // { token, id } : l'utilisateur de la clé
+async function clickupUserId(token) {
+  if (clickupMe?.token !== token) clickupMe = { token, id: (await clickupGet(token, 'user')).user.id };
+  return clickupMe.id;
+}
+const clickupError = (e) => (e.status === 401 ? 'Clé ClickUp refusée : vérifie-la dans les paramètres' : e.message);
+
+// Arborescence à cocher dans les paramètres : espaces › dossiers › listes, par espace de travail
+ipcMain.handle('clickup:hierarchy', async () => {
+  const token = clickupToken();
+  if (!token) return { error: 'Ajoute ta clé ClickUp dans les paramètres' };
+  try {
+    const { teams } = await clickupGet(token, 'team');
+    const lists = (ls) => (ls || []).map((l) => ({ id: l.id, name: l.name }));
+    return {
+      teams: await Promise.all(teams.map(async (team) => {
+        const { spaces } = await clickupGet(token, `team/${team.id}/space?archived=false`);
+        return {
+          id: team.id, name: team.name,
+          spaces: await Promise.all(spaces.map(async (s) => {
+            const [{ folders }, { lists: loose }] = await Promise.all([
+              clickupGet(token, `space/${s.id}/folder?archived=false`),
+              clickupGet(token, `space/${s.id}/list?archived=false`),
+            ]);
+            return { id: s.id, name: s.name, folders: folders.map((f) => ({ id: f.id, name: f.name, lists: lists(f.lists) })), lists: lists(loose) };
+          })),
+        };
+      })),
+    };
+  } catch (e) {
+    return { error: clickupError(e) };
+  }
+});
+
+const INBOX_MAX_PAGES = 10;
+const INBOX_PARAM = { space: 'space_ids[]', folder: 'project_ids[]', list: 'list_ids[]' };
+
+// sources : [{ kind: 'space' | 'folder' | 'list', id, teamId }] ; statuses : noms comparés sans accents
+ipcMain.handle('clickup:inbox', async (_e, sources, statuses) => {
+  const token = clickupToken();
+  if (!token) return { error: 'Ajoute ta clé ClickUp dans les paramètres' };
+  try {
+    const me = await clickupUserId(token);
+    const found = new Map();
+    let truncated = false;
+    // Une requête par source : les filtres d'espace, de dossier et de liste se cumulent (ET) chez ClickUp
+    await Promise.all(sources.filter((s) => INBOX_PARAM[s.kind] && s.teamId).map(async (s) => {
+      for (let page = 0; page < INBOX_MAX_PAGES; page++) {
+        const q = new URLSearchParams({ page, subtasks: 'true', include_closed: 'false', order_by: 'updated' });
+        q.append(INBOX_PARAM[s.kind], s.id);
+        const res = await clickupGet(token, `team/${encodeURIComponent(s.teamId)}/task?${q}`);
+        // Les statuts ne sont pas filtrés côté ClickUp : leur nom exact varie d'une liste à l'autre
+        for (const t of res.tasks || []) {
+          const mine = (t.assignees || []).some((a) => a.id === me);
+          if (!statuses.some((x) => sameStatus(x, t.status?.status)) || (t.assignees?.length && !mine)) continue;
+          found.set(t.id, {
+            id: t.id,
+            customId: t.custom_id || undefined,
+            name: t.name,
+            url: t.url,
+            status: t.status?.status,
+            statusColor: t.status?.color,
+            priority: t.priority?.priority,
+            mine,
+            list: t.list?.name,
+            folder: t.folder?.hidden ? undefined : t.folder?.name,
+            space: t.space?.id,
+            created: +t.date_created || 0,
+            updated: +t.date_updated || 0,
+            creator: t.creator?.username,
+          });
+        }
+        if (res.last_page !== false || (res.tasks || []).length < 100) return;
+      }
+      truncated = true;
+    }));
+    return { items: [...found.values()].sort((a, b) => b.updated - a.updated), truncated };
+  } catch (e) {
+    return { error: clickupError(e) };
+  }
+});
+
+ipcMain.handle('clickup:assign-me', async (_e, taskId) => {
+  const token = clickupToken();
+  if (!token) return { error: 'Ajoute ta clé ClickUp dans les paramètres' };
+  try {
+    const me = await clickupUserId(token);
+    await clickupSend(token, 'PUT', `task/${encodeURIComponent(taskId)}`, { assignees: { add: [me], rem: [] } });
+    return { ok: true };
+  } catch (e) {
+    return { error: clickupError(e) };
+  }
+});
+
 // Démarrage : config des presets, surveillance, et reprise de la file laissée par la session précédente
 function startClickupSync() {
   const data = loadData();

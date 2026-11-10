@@ -23,10 +23,11 @@ Un développeur qui travaille avec Claude Code jongle avec plusieurs projets (so
 | Ouvrir un projet en un clic | **Projets (presets)** : dossier, couleur, compte Claude et la liste des terminaux à ouvrir (racine, `front`, `back`, Claude, shell ou commande comme `npm run dev`), avec leur disposition. |
 | Voir plusieurs terminaux à la fois | **Onglets ou grille** : côte à côte, empilés, grille, « 1 + pile », « 1 + rangée ». Séparations redimensionnables, terminaux déplaçables par glisser-déposer, passage grille ↔ onglets. |
 | Savoir où en est Claude | **Indicateurs d'état** sur les onglets, les en-têtes et la liste des projets : rond qui tourne quand Claude travaille, bulle qui pulse quand il attend une réponse. **Son de fin** au choix (sons synthétisés ou sons du Mac, dont « Brise »). |
-| Voir ce que Claude a changé | Onglet **Modifications** du panneau de droite (partagé avec le kanban, un seul visible à la fois), en direct, depuis l'ouverture de l'onglet ou depuis le dernier commit. |
+| Voir ce que Claude a changé | Onglet **Modifications** du panneau de droite (partagé avec le kanban et l'inbox, un seul visible à la fois), en direct, depuis l'ouverture de l'onglet ou depuis le dernier commit. |
 | Relancer les prompts et skills habituels | **Barre de prompt** (vers le terminal actif ou tous), **prompts enregistrés**, **skills** Claude Code listés et lancés via un formulaire avec aperçu. |
 | Séparer pro et perso | **Espaces par compte Claude** : chaque compte a ses projets, onglets, skills et historique. |
 | Suivre les tâches et les relier à Claude | **Kanban par projet** (À faire, En cours, À relire, Fait), tickets **ClickUp** importés par leur numéro, lancement d'un skill sur une carte, mise à jour du tableau par un skill Claude. |
+| Trier les nouveaux tickets | **Inbox ClickUp** : tickets à trier des projets ClickUp choisis dans les paramètres ; « Ignorer » ou « À faire » (assignation dans ClickUp + carte dans le kanban). |
 | Tenir ClickUp à jour sans y penser | **Synchro ClickUp** (par projet, désactivée par défaut) : quand une carte liée passe en « En cours » puis en « À relire », le ticket avance (« dev en cours », puis « revue de code à faire ») et le temps passé en « En cours » est loggé sur le ticket. |
 | Surveiller sa consommation | **Jauge d'utilisation** du forfait Claude (session de 5 h et semaine). |
 | Préférer une vue « conversation » | **Thème Conversation** : sessions Claude affichées en bulles, actions résumées en cartes, autorisations en boutons. |
@@ -77,6 +78,7 @@ renderer/
                      palette ⌘K, diff, thèmes, fond, sons, utilisation, mises à jour
   chat.js            Vue conversation (thème Conversation) au-dessus de stream-json
   kanban.js          Tableau des tâches, glisser-déposer, import ClickUp
+  inbox.js           Inbox ClickUp reconstituée : tri des tickets, choix des projets suivis
   icons.js           Pictogrammes SVG au trait (style Lucide)
   styles.css         Thèmes par variables CSS, mises en page, composants
 build/
@@ -115,7 +117,7 @@ docs/CLUTCH.md       Ce document
 | Skills | `skills:scan` |
 | Comptes / utilisation | `account:status`, `usage:get` |
 | Kanban | `kanban:read`, `kanban:write`, `kanban:watch` ; événement `kanban:changed` |
-| ClickUp | `clickup:status`, `clickup:set-token`, `clickup:task`, `clickup:check-statuses` ; événement `clickup:sync` `{ project, taskId, ref, action, ok, error?, detail?, skipped?, queued? }` |
+| ClickUp | `clickup:status`, `clickup:set-token`, `clickup:task`, `clickup:check-statuses`, `clickup:hierarchy`, `clickup:inbox`, `clickup:assign-me` ; événement `clickup:sync` `{ project, taskId, ref, action, ok, error?, detail?, skipped?, queued? }` |
 | Apparence / sons | `bg:pick`, `bg:read`, `win:bg`, `sound:system` |
 | Mises à jour | `app:update-status`, `app:rebuild` ; événement `app:rebuild-log` |
 
@@ -226,6 +228,15 @@ Un preset sans synchro reste enregistré sans cette clé, et rien ne change pour
 - idempotence : le statut est relu avant chaque `PUT`, et une entrée de temps dont la clé est déjà connue n'est pas recréée ;
 - chaque résultat (succès, refus, mise en file) est ajouté à `clickup-sync.log` dans le dossier de l'app, sans la clé ;
 - côté interface : un succès donne une notification discrète ; un échec donne une notification visible et un marqueur « non synchronisé » sur la carte, retiré au succès suivant. La carte affiche aussi le temps loggé et un point quand le chrono tourne.
+
+#### Inbox ClickUp
+
+- ClickUp n'expose pas son Inbox (notifications) dans l'API publique : Clutch la reconstitue à partir des projets ClickUp choisis dans les paramètres.
+- **Projets suivis** : `clickup:hierarchy` lit `GET /team`, puis par espace de travail `GET /team/{id}/space`, et par espace `GET /space/{id}/folder` et `GET /space/{id}/list` (listes hors dossier). L'arbre est lu une fois par session (⟳ pour le relire). La sélection est dans `data.json`, clé `inbox.sources` : `[{ kind: "space"|"folder"|"list", id, teamId, name }]`. Cocher un parent retire ses enfants de la sélection.
+- **Tickets** : `clickup:inbox` envoie une requête `GET /team/{teamId}/task?space_ids[]|project_ids[]|list_ids[]=…&subtasks=true&order_by=updated` par source, jusqu'à 10 pages de 100 tickets. Il fait une requête par source parce que ClickUp combine ces filtres en ET. Les tickets fermés sont exclus. Les statuts (`inbox.statuses`, par défaut nouveau, à faire, rejeté) sont filtrés côté Clutch, sans tenir compte de la casse ni des accents, car leur nom exact varie d'une liste à l'autre. Sont gardés les tickets qui n'ont personne d'assigné ou qui sont assignés à l'utilisateur de la clé.
+- **Ignorer** : l'id est ajouté à `inbox.dismissed` (2 000 derniers), le ticket ne revient plus.
+- **À faire** : `clickup:assign-me` (`PUT /task/{id}` avec `assignees.add`), puis relecture du ticket et ajout d'une carte `todo` dans `.clutch/kanban.json` du projet choisi en haut du panneau, comme un import par numéro. Les tickets déjà présents sur ce tableau ne sont pas affichés dans l'inbox.
+- Relecture : à l'ouverture, avec ⟳, et toutes les 5 min quand l'inbox est affichée. Changer d'onglet ou de projet relit seulement le kanban de destination.
 
 #### Utilisation du forfait
 

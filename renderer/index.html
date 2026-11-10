@@ -41,7 +41,7 @@
       </section>
       <div class="side-foot">
         <button id="btn-free" title="Cmd+T">Terminal libre</button>
-        <div class="hint">⌘K lancer · ⌘J skill · ⌘T nouveau · ⌘W fermer · ⌘L prompt · ⌘B kanban · ⌘1-9 onglets</div>
+        <div class="hint">⌘K lancer · ⌘J skill · ⌘T nouveau · ⌘W fermer · ⌘L prompt · ⌘B kanban · ⌘I inbox · ⌘1-9 onglets</div>
       </div>
     </aside>
 
@@ -52,6 +52,7 @@
         <div class="tab-actions">
           <button id="btn-diff" data-icon="diff" title="Afficher les modifications (⌘D)"></button>
           <button id="btn-kanban" data-icon="kanban" title="Tableau des tâches du projet (⌘B)"></button>
+          <button id="btn-inbox" data-icon="inbox" title="Inbox ClickUp : tickets à trier (⌘I)"></button>
           <button id="btn-layout" title="Basculer onglets / grille"></button>
           <button id="btn-accounts" data-icon="user" title="Comptes Claude"></button>
           <button id="btn-settings" data-icon="settings" title="Paramètres"></button>
@@ -91,6 +92,7 @@
       <div id="side-tabs">
         <button data-side="diff" title="Modifications (⌘D)">Modifications<span id="side-diff-count"></span></button>
         <button data-side="kanban" title="Kanban (⌘B)">Kanban</button>
+        <button data-side="inbox" title="Inbox ClickUp (⌘I)">Inbox<span id="side-inbox-count"></span></button>
       </div>
       <aside id="diff-panel" class="hidden">
         <div class="diff-head">
@@ -123,6 +125,17 @@
         </form>
         <div id="kb-error" class="hidden"></div>
         <div id="kb-board"></div>
+      </aside>
+      <aside id="inbox-panel" class="hidden">
+        <div class="diff-head">
+          <div class="diff-title"><select id="ib-project" title="Kanban où vont les tickets mis dans « À faire »"></select><span id="ib-stats"></span></div>
+          <div class="diff-tools">
+            <button id="ib-reload" data-icon="refresh" title="Recharger depuis ClickUp"></button>
+            <button id="ib-close" data-icon="x" title="Fermer (⌘I)"></button>
+          </div>
+        </div>
+        <div id="ib-list"></div>
+        <div id="ib-foot" class="hidden"></div>
       </aside>
       </div>
       </div>
@@ -240,6 +253,12 @@
           <button type="button" id="cu-remove" class="danger hidden">Retirer</button>
         </div>
       </div>
+      <div class="settings-sec">
+        <div class="settings-head">Inbox ClickUp <span id="ib-src-count"></span></div>
+        <div class="desc">ClickUp ne partage pas son Inbox par l'API : l'onglet Inbox du panneau de droite liste les tickets ouverts des projets cochés ici, dans l'un des statuts ci-dessous, sans personne d'assigné ou assignés à toi. Cocher un espace ou un dossier inclut tout ce qu'il contient.</div>
+        <label>Statuts à trier<input id="ib-statuses" placeholder="nouveau, à faire, rejeté" spellcheck="false"></label>
+        <div id="ib-tree"></div>
+      </div>
       <div class="dialog-actions"><button type="button" data-close>Fermer</button></div>
     </form>
   </div>
@@ -260,5 +279,6 @@
   <script src="renderer.js"></script>
   <script src="chat.js"></script>
   <script src="kanban.js"></script>
+  <script src="inbox.js"></script>
 </body>
 </html>

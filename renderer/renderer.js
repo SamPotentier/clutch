@@ -87,7 +87,8 @@ const state = { theme: 'nuit', accounts: [], account: '', defaultName: 'Pro', la
   diff: { open: false, scope: 'session', auto: true, width: 560, collapsed: new Set() },
   bg: { kind: '', color: '#1e2a44', image: '', imageName: '', opacity: 78, blur: 0 },
   sound: { name: 'carillon', volume: 60 },
-  kanban: { open: false, width: 640, presetId: '' }, side: { width: 640 } };
+  kanban: { open: false, width: 640, presetId: '' }, side: { width: 640 },
+  inbox: { open: false, statuses: ['nouveau', 'à faire', 'rejeté'], sources: [], dismissed: [] } };
 const byPty = new Map(); // ptyId -> tab
 
 function persist() {
@@ -97,6 +98,7 @@ function persist() {
     diff: { scope: state.diff.scope, auto: state.diff.auto },
     side: { width: state.side.width },
     kanban: { open: state.kanban.open, presetId: state.kanban.presetId, lastSkill: state.kanban.lastSkill },
+    inbox: { open: state.inbox.open, statuses: state.inbox.statuses, sources: state.inbox.sources, dismissed: state.inbox.dismissed },
   });
 }
 
@@ -1356,14 +1358,14 @@ async function loadDiff() {
     parseDiff(patch).map((f) => ({ ...f, repo: name, path: name ? `${name}/${f.path}` : f.path })));
   if (!files.length) t.diffDismissed = false;
   // L'ouverture auto ne prend pas la place du kanban : le compteur de l'onglet suffit
-  else if (state.diff.auto && !t.diffDismissed && !state.diff.open && !state.kanban.open) setDiffOpen(true);
+  else if (state.diff.auto && !t.diffDismissed && !state.diff.open && !state.kanban.open && !state.inbox.open) setDiffOpen(true);
   $('#side-diff-count').textContent = files.length || '';
   renderDiff(t, files);
 }
 
-// Diff et kanban partagent le panneau de droite : un seul visible à la fois, choisi par onglet
+// Diff, kanban et inbox partagent le panneau de droite : un seul visible à la fois, choisi par onglet
 function updateSidePanel() {
-  const open = state.diff.open || state.kanban.open;
+  const open = state.diff.open || state.kanban.open || state.inbox.open;
   $('#side-panel').classList.toggle('hidden', !open);
   $('#side-resizer').classList.toggle('hidden', !open);
   $('#side-panel').style.width = state.side.width + 'px';
@@ -1373,6 +1375,7 @@ function updateSidePanel() {
 
 function setDiffOpen(open) {
   if (open && state.kanban.open) setKanbanOpen(false);
+  if (open && state.inbox.open) setInboxOpen(false);
   state.diff.open = open;
   $('#diff-panel').classList.toggle('hidden', !open);
   $('#btn-diff').classList.toggle('on', open);
@@ -1480,6 +1483,7 @@ api.onGitChanged((root) => { if (activeTab()?.git?.repos.some((r) => r.root === 
 
 document.querySelectorAll('#side-tabs button').forEach((b) => b.onclick = () => {
   if (b.dataset.side === 'kanban') return state.kanban.open || setKanbanOpen(true);
+  if (b.dataset.side === 'inbox') return state.inbox.open || setInboxOpen(true);
   if (!state.diff.open) toggleDiff();
 });
 
@@ -1533,6 +1537,7 @@ function openSettings() {
   $('#settings').classList.remove('hidden');
   $('#cu-token').focus();
   renderClickupStatus();
+  openInboxSettings();
 }
 
 $('#btn-settings').onclick = openSettings;
@@ -1884,6 +1889,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'g') $('#btn-layout').click();
   else if (k === 'd') toggleDiff();
   else if (k === 'b') toggleKanban();
+  else if (k === 'i') toggleInbox();
   // e.code (touche physique) : en AZERTY, ⌘ + la touche 1 donne « & » dans e.key
   else if (/^Digit[1-9]$/.test(e.code) && !e.shiftKey) { const t = spaceTabs()[+e.code.slice(5) - 1]; if (t) activate(t.key); }
   else if (e.shiftKey && (k === ']' || k === '}' || k === '[' || k === '{')) {
@@ -2011,6 +2017,7 @@ api.onRebuildLog((text) => {
   Object.assign(state.bg, data.bg || {});
   Object.assign(state.sound, data.sound || {});
   Object.assign(state.kanban, data.kanban || {});
+  Object.assign(state.inbox, data.inbox || {});
   state.side.width = data.side?.width || state.kanban.width || state.side.width;
   applyTheme(data.theme || 'nuit');
   applyBg();
@@ -2025,4 +2032,5 @@ api.onRebuildLog((text) => {
   window.addEventListener('resize', () => state.tabs.forEach(fitTab));
   refreshUsage(true);
   initKanban();
+  initInbox();
 })();
