@@ -253,7 +253,7 @@ Un preset sans synchro reste enregistré sans cette clé, et rien ne change pour
 #### Fenêtre et apparence
 
 - La croix masque la fenêtre (un indicateur `quitting` est armé par `before-quit`) ; `activate` la réaffiche.
-- **Thèmes** : variables CSS sur `body[data-theme]`, plus une palette xterm par thème. Thèmes : Nuit, Glass, Papier, Rétro, Système, Kyōto, Conversation. Barres de défilement teintées par thème.
+- **Thèmes** : variables CSS sur `body[data-theme]`, plus une palette xterm par thème. Thèmes : Nuit, Glass, Papier, Rétro, Système, Kyōto, Magic, Conversation. Barres de défilement teintées par thème.
 - **Fond personnalisé** : couleur ou image (copiée dans `userData/backgrounds`, relue en `data:`), panneaux translucides et terminaux transparents.
 - Au démarrage, l'initialisation attend `DOMContentLoaded` : sans cette attente, les données pouvaient arriver avant le chargement de `chat.js` et `kanban.js`.
 

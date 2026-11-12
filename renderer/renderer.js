@@ -67,6 +67,16 @@ const THEMES = {
       brightBlack: '#6e6052', brightRed: '#f07a62', brightGreen: '#a9cc8d', brightYellow: '#e6c06e', brightBlue: '#94b0d4', brightMagenta: '#f2a7b8', brightCyan: '#8fc4bc', brightWhite: '#fbf6ec',
     },
   },
+  magic: {
+    label: 'Magic', desc: 'Cadre de carte Magic : or, parchemin et les cinq couleurs de mana', swatches: ['#14110c', '#2a2318', '#d4af5a', '#6aa9dc'],
+    scroll: '#d4af5a',
+    winBg: '#0d0b08', fontSize: 13, lineHeight: 1.2, cursor: 'block', placeholder: 'Lance ton sort… (⌘↵ pour envoyer)',
+    xterm: {
+      background: '#110e0a', foreground: '#eadfc4', cursor: '#d4af5a', cursorAccent: '#110e0a', selectionBackground: 'rgba(212,175,90,.26)',
+      black: '#14110c', red: '#e0604a', green: '#6fb87c', yellow: '#d4af5a', blue: '#6aa9dc', magenta: '#9a88ad', cyan: '#6fbdb4', white: '#d6cab0',
+      brightBlack: '#6f634c', brightRed: '#f08570', brightGreen: '#8fd09a', brightYellow: '#e9cd84', brightBlue: '#8fc2ea', brightMagenta: '#b8a6ca', brightCyan: '#92d4cc', brightWhite: '#f6ecd2',
+    },
+  },
 };
 THEMES.conversation = {
   ...THEMES.papier, label: 'Conversation', desc: 'Claude comme une discussion : bulles, texte lisible, actions résumées',

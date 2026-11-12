@@ -691,6 +691,73 @@ body[data-theme="kyoto"] .dialog { border-top: 3px solid var(--accent); }
 body[data-theme="kyoto"] button.primary { background: var(--accent); color: #fbf6ec; border-color: var(--accent); }
 body[data-theme="kyoto"] #preset-list li:hover { box-shadow: inset 2px 0 0 #f2a7b8; }
 
+/* Thème Magic : cadre de carte, or des multicolores, parchemin, les cinq manas (WUBRG) */
+body[data-theme="magic"] {
+  --app-bg: radial-gradient(ellipse 70% 50% at 50% 0%, rgba(212, 175, 90, .10), transparent 65%), #0d0b08;
+  --bg: #14110c;
+  --bg-2: #1a160f;
+  --bg-3: #2a2318;
+  --border: #4a3c24;
+  --text: #eadfc4;
+  --muted: #a8997a;
+  --faint: #6f634c;
+  --accent: #d4af5a;
+  --on-accent: #1a1408;
+  --danger: #e0604a;
+  --add: #6fb87c;
+  --del: #e0604a;
+  --warn: #e0a44a;
+  --info: #6aa9dc;
+  --add-bg: rgba(111, 184, 124, .10);
+  --add-bg-2: rgba(111, 184, 124, .17);
+  --del-bg: rgba(224, 96, 74, .10);
+  --del-bg-2: rgba(224, 96, 74, .17);
+  --hunk-bg: rgba(212, 175, 90, .09);
+  --overlay: rgba(8, 6, 3, .6);
+  --shadow: 0 24px 70px rgba(0, 0, 0, .7);
+  --term-bg: #110e0a;
+  --font-ui: Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --r: 5px;
+  --r2: 8px;
+  --r3: 12px;
+  --frame: #6b5730;
+  --bar: linear-gradient(180deg, #3a2f1c, #231c11);
+  --mana-w: #f3ecc8;
+  --mana-u: #6aa9dc;
+  --mana-b: #9a88ad;
+  --mana-r: #e0604a;
+  --mana-g: #6fb87c;
+}
+body[data-theme="magic"] { font-size: 13.5px; }
+body[data-theme="magic"] #sidebar { border-right-color: var(--frame); }
+body[data-theme="magic"] .side-head, body[data-theme="magic"] .side-list .group, body[data-theme="magic"] .tp-head, body[data-theme="magic"] .kb-col header { text-transform: none; font-variant-caps: small-caps; font-size: 13px; letter-spacing: .08em; }
+/* Les cinq couleurs de mana sous la barre d'onglets */
+body[data-theme="magic"] #tabbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; pointer-events: none; background: linear-gradient(90deg, var(--mana-w), var(--mana-u), var(--mana-b), var(--mana-r), var(--mana-g)); opacity: .75; }
+/* Onglet actif et en-têtes : la barre de titre d'une carte */
+body[data-theme="magic"] .tab.active { background: var(--bar); border-color: var(--frame); color: #f6ecd2; box-shadow: inset 0 1px 0 rgba(255, 236, 180, .18); }
+body[data-theme="magic"] .term-head { background: var(--bar); color: #d9c9a0; border-bottom: 1px solid var(--border); }
+body[data-theme="magic"] .term-wrap { border: 1px solid var(--frame); }
+/* Fenêtres : bord noir de la carte, titre dans son cartouche, coût de mana à droite */
+body[data-theme="magic"] .dialog { border-color: var(--frame); box-shadow: 0 0 0 6px #0b0906, 0 0 0 7px var(--bg-3), var(--shadow); }
+body[data-theme="magic"] .dialog h3 { padding: 7px 12px; border: 1px solid var(--frame); border-radius: var(--r2); background: var(--bar); color: #f6ecd2; box-shadow: inset 0 1px 0 rgba(255, 236, 180, .2); }
+body[data-theme="magic"] .dialog h3::after { content: ""; float: right; width: 16px; height: 16px; margin-top: 1px; border-radius: 50%; background: conic-gradient(from -36deg, var(--mana-w) 0 72deg, var(--mana-u) 0 144deg, var(--mana-b) 0 216deg, var(--mana-r) 0 288deg, var(--mana-g) 0); box-shadow: 0 1px 0 #000, inset 0 0 0 1px rgba(0, 0, 0, .35); }
+body[data-theme="magic"] .popover { border-color: var(--frame); }
+body[data-theme="magic"] button.primary { background: linear-gradient(180deg, #e6c777, #b8923f); border-color: #8a6d2c; color: var(--on-accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35); }
+body[data-theme="magic"] #preset-list li:hover, body[data-theme="magic"] .side-list li:not(.group):hover { box-shadow: inset 2px 0 0 var(--accent); }
+/* Le prompt : l'encadré de texte en parchemin, placeholder en texte d'ambiance */
+body[data-theme="magic"] #prompt { font-family: var(--font-ui); font-size: 14px; background: #e9dfc6; color: #221b10; border-color: #8a6d2c; caret-color: #8a2a1c; box-shadow: inset 0 2px 6px rgba(60, 40, 10, .28); }
+body[data-theme="magic"] #prompt::placeholder { color: #7a6c50; font-style: italic; }
+body[data-theme="magic"] #prompt::selection { background: rgba(138, 109, 44, .4); }
+/* Écran vide : une rangée de pastilles de mana */
+body[data-theme="magic"] #empty::before { content: ""; width: 124px; height: 20px; margin-bottom: 6px; background: radial-gradient(circle at 10px 10px, var(--mana-w) 0 8px, transparent 8.5px), radial-gradient(circle at 36px 10px, var(--mana-u) 0 8px, transparent 8.5px), radial-gradient(circle at 62px 10px, var(--mana-b) 0 8px, transparent 8.5px), radial-gradient(circle at 88px 10px, var(--mana-r) 0 8px, transparent 8.5px), radial-gradient(circle at 114px 10px, var(--mana-g) 0 8px, transparent 8.5px); filter: drop-shadow(0 1px 0 #000); }
+/* Kanban : chaque colonne a son mana, les tâches sont des cartes */
+body[data-theme="magic"] .kb-col { --mana: var(--mana-w); }
+body[data-theme="magic"] .kb-col[data-status="in_progress"] { --mana: var(--mana-r); }
+body[data-theme="magic"] .kb-col[data-status="review"] { --mana: var(--mana-u); }
+body[data-theme="magic"] .kb-col[data-status="done"] { --mana: var(--mana-g); }
+body[data-theme="magic"] .kb-col .kb-dot { width: 10px; height: 10px; background: var(--mana); box-shadow: 0 1px 0 #000; }
+body[data-theme="magic"] .kb-card { background: linear-gradient(180deg, #211b12, var(--bg)); border-color: var(--frame); border-top-color: var(--mana); box-shadow: 0 0 0 2px #0b0906; }
+
 /* Pictogrammes SVG (icons.js) */
 .ic { width: 15px; height: 15px; flex-shrink: 0; vertical-align: -3px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .ic.filled { fill: currentColor; }
@@ -721,6 +788,7 @@ body[data-theme="retro"] { --sb: var(--accent); --sb-hover: var(--warn); --sb-ra
 body[data-theme="systeme"] { --sb: rgba(63, 169, 255, .45); --sb-hover: rgba(92, 200, 255, .8); --sb-radius: 1px; }
 body[data-theme="systeme"] ::-webkit-scrollbar-thumb { box-shadow: inset 0 0 6px rgba(143, 211, 255, .6); }
 body[data-theme="kyoto"] { --sb-radius: 2px; --sb-inset: 4px; }
+body[data-theme="magic"] { --sb-radius: 3px; }
 /* Barre du terminal (xterm 6) : même forme que les barres CSS */
 .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider { left: var(--sb-inset) !important; width: calc(100% - 2 * var(--sb-inset)) !important; border-radius: var(--sb-radius); }
 body[data-theme="systeme"] .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider { box-shadow: inset 0 0 6px rgba(143, 211, 255, .6); }
