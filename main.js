@@ -620,10 +620,14 @@ async function clickupTask(ref) {
         description: (task.markdown_description || task.text_content || '').trim(),
         url: task.url,
         status: task.status?.status,
+        statusColor: task.status?.color,
         priority: task.priority?.priority,
         assignees: (task.assignees || []).map((a) => a.username || a.email).filter(Boolean),
         tags: (task.tags || []).map((t) => t.name),
+        start: day(task.start_date),
         due: day(task.due_date),
+        creator: task.creator?.username,
+        created: day(task.date_created),
         list: task.list?.name,
         listId: task.list?.id,
         teamId: task.team_id,
@@ -639,15 +643,15 @@ ipcMain.handle('clickup:task', (_e, ref) => clickupTask(ref));
 
 /* ---------- Synchro ClickUp depuis le kanban ---------- */
 // Les changements de colonne du kanban (interface, skill Claude ou glisser-déposer) font avancer
-// le ticket ClickUp lié et proposent de logger le temps passé en « En cours » (envoyé seulement après
-// validation dans l'interface). Jamais de recul, jamais de commentaire.
+// le ticket ClickUp lié vers le statut relié à la colonne, et proposent de logger le temps passé dans
+// les colonnes chronométrées (envoyé seulement après validation dans l'interface). Jamais de recul,
+// jamais de commentaire.
 
-const SYNC_DEFAULTS = { enabled: false, todo: 'à faire', inProgress: 'dev en cours', review: 'revue de code à faire', logTime: true };
+// Colonnes du projet et rangement des statuts : mêmes règles que l'interface
+const { kbColumns, kbStatus } = require('./renderer/kanban-cols.js');
+const SYNC_DEFAULTS = { enabled: false, logTime: true };
 const SYNC_MIN_MS = 60 * 1000;
 const SYNC_BACKOFF = [30, 120, 600, 1800, 3600].map((s) => s * 1000);
-// Mêmes alias que l'interface : un skill peut écrire « doing », « en cours »…
-const KB_ALIASES = { todo: 'todo', afaire: 'todo', backlog: 'todo', inprogress: 'in_progress', doing: 'in_progress', encours: 'in_progress', wip: 'in_progress', review: 'review', toreview: 'review', inreview: 'review', arelire: 'review', done: 'done', fait: 'done', termine: 'done' };
-const kbStatus = (s) => KB_ALIASES[String(s || '').normalize('NFD').replace(/[^a-z]/gi, '').toLowerCase()] || 'todo';
 // Noms de statuts ClickUp comparés sans casse, accents ni espaces en trop
 const sameStatus = (a, b) => {
   const n = (x) => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -667,7 +671,7 @@ let syncRunning = false;
 function syncConfig(dir) {
   const key = projectKey(dir);
   const p = syncPresets.find((x) => x.clickupSync?.enabled && x.cwd && projectKey(x.cwd) === key);
-  return p ? { ...SYNC_DEFAULTS, ...p.clickupSync, cwd: p.cwd } : null;
+  return p ? { ...SYNC_DEFAULTS, ...p.clickupSync, cwd: p.cwd, columns: kbColumns(p) } : null;
 }
 
 // Les presets ont changé : on surveille le kanban de chaque projet synchronisé, panneau ouvert ou non
@@ -687,17 +691,19 @@ function syncConfigChanged(presets) {
 // Appelée après chaque lecture ou écriture du kanban : compare aux statuts connus et déclenche la synchro.
 // La table est mise à jour avant tout appel réseau : une relecture de la même écriture (watchFile)
 // ne voit plus de différence, une transition ne part donc qu'une fois.
+// Les statuts sont gardés tels qu'écrits et rangés en colonnes au moment de comparer : modifier les
+// colonnes du projet ne crée pas de transition.
 function kanbanSnapshot(dir, tasks) {
   const key = projectKey(dir);
   const prev = syncTables.get(key);
-  syncTables.set(key, new Map(tasks.filter((t) => t?.id != null).map((t) => [String(t.id), kbStatus(t.status)])));
+  syncTables.set(key, new Map(tasks.filter((t) => t?.id != null).map((t) => [String(t.id), t.status])));
   const cfg = prev && syncConfig(dir);
   if (!cfg) return;
   for (const t of tasks) {
-    if (t?.id == null || !t.clickup?.id) continue;
-    const from = prev.get(String(t.id));
-    const to = kbStatus(t.status);
-    if (from && from !== to) syncTransition(cfg, dir, t, from, to);
+    if (t?.id == null || !t.clickup?.id || !prev.has(String(t.id))) continue;
+    const from = kbStatus(prev.get(String(t.id)), cfg.columns);
+    const to = kbStatus(t.status, cfg.columns);
+    if (from !== to) syncTransition(cfg, dir, t, from, to);
   }
 }
 
@@ -715,28 +721,42 @@ function patchKanbanTask(dir, taskId, fn) {
 
 function syncTransition(cfg, dir, task, from, to) {
   const base = { project: cfg.cwd, dir, taskId: String(task.id), clickupId: task.clickup.id, ref: task.clickup.customId || task.clickup.id };
+  const cols = cfg.columns;
+  // « done » sans colonne se place après la dernière : y passer ne déclenche rien, en revenir est un recul
+  const at = (id) => { const x = cols.findIndex((c) => c.id === id); return x < 0 ? cols.length : x; };
+  const [i, j] = [at(from), at(to)];
+  const col = cols[j];
+  if (!col) return;
   const now = Date.now();
-  if (to === 'in_progress') {
-    const startedAt = new Date(now).toISOString();
-    syncStarted.set(`${projectKey(dir)}:${task.id}`, startedAt);
-    patchKanbanTask(dir, task.id, (t) => { t.timing = { loggedMs: 0, ...t.timing, startedAt }; });
-    if (from === 'todo') enqueueSync({ ...base, kind: 'status', allowed: [cfg.todo], target: cfg.inProgress });
-  } else if (from === 'in_progress' && to === 'review') {
-    enqueueSync({ ...base, kind: 'status', allowed: [cfg.todo, cfg.inProgress], target: cfg.review });
-    const startedAt = task.timing?.startedAt || syncStarted.get(`${projectKey(dir)}:${task.id}`);
-    syncStarted.delete(`${projectKey(dir)}:${task.id}`);
-    if (!startedAt) return;
-    const start = Date.parse(startedAt);
-    const duration = now - start;
-    // Le segment est clos tout de suite ; loggedMs n'augmente qu'une fois l'entrée créée dans ClickUp
-    patchKanbanTask(dir, task.id, (t) => { t.timing = { loggedMs: 0, ...t.timing, startedAt: null }; });
-    if (cfg.logTime && duration >= SYNC_MIN_MS) {
-      // Rien ne part tout seul : l'interface propose la durée, on la corrige puis on l'envoie (clickup:time-confirm)
-      const pending = { ...base, id: Math.random().toString(36).slice(2, 10), title: task.title, teamId: task.clickup.teamId, start, duration, key: `${task.id}:${startedAt}` };
-      syncPending.push(pending);
-      persistSyncQueue();
-      if (win && !win.isDestroyed()) win.webContents.send('clickup:time-pending', pending);
+  const key = `${projectKey(dir)}:${task.id}`;
+  const startedAt = cols[i]?.timer ? task.timing?.startedAt || syncStarted.get(key) : null;
+  if (col.timer) {
+    // D'une colonne chronométrée à une autre, le chrono continue
+    if (!startedAt) {
+      const started = new Date(now).toISOString();
+      syncStarted.set(key, started);
+      patchKanbanTask(dir, task.id, (t) => { t.timing = { loggedMs: 0, ...t.timing, startedAt: started }; });
     }
+  } else if (cols[i]?.timer && j > i) {
+    syncStarted.delete(key);
+    if (startedAt) {
+      const start = Date.parse(startedAt);
+      const duration = now - start;
+      // Le segment est clos tout de suite ; loggedMs n'augmente qu'une fois l'entrée créée dans ClickUp
+      patchKanbanTask(dir, task.id, (t) => { t.timing = { loggedMs: 0, ...t.timing, startedAt: null }; });
+      if (cfg.logTime && duration >= SYNC_MIN_MS) {
+        // Rien ne part tout seul : l'interface propose la durée, on la corrige puis on l'envoie (clickup:time-confirm)
+        const pending = { ...base, id: Math.random().toString(36).slice(2, 10), title: task.title, teamId: task.clickup.teamId, start, duration, key: `${task.id}:${startedAt}` };
+        syncPending.push(pending);
+        persistSyncQueue();
+        if (win && !win.isDestroyed()) win.webContents.send('clickup:time-pending', pending);
+      }
+    }
+  }
+  // La carte avance vers une colonne reliée : le ticket suit s'il est encore au statut d'une colonne précédente
+  if (j > i && col.status) {
+    const allowed = cols.slice(0, j).map((c) => c.status).filter((s) => s && !sameStatus(s, col.status));
+    if (allowed.length) enqueueSync({ ...base, kind: 'status', allowed, target: col.status });
   }
 }
 
@@ -773,6 +793,14 @@ function rememberIds(a, task) {
   return ids;
 }
 
+// Statut ClickUp affiché sur la carte : tenu à jour après chaque synchro, sans avoir à recharger le ticket
+function rememberStatus(a, status) {
+  patchKanbanTask(a.dir, a.taskId, (t) => {
+    if (!status || t.clickup?.id !== a.clickupId || t.clickup.status === status) return false;
+    t.clickup.status = status;
+  });
+}
+
 async function clickupSend(token, method, route, body) {
   const res = await fetch(`https://api.clickup.com/api/v2/${route}`, {
     method, headers: { Authorization: token, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -804,11 +832,15 @@ async function runSyncAction(a, token) {
   if (a.kind === 'status') {
     // Relu juste avant d'écrire : on n'avance que depuis un statut attendu, sinon on ne touche à rien
     const current = task.status?.status;
-    if (!a.allowed.some((s) => sameStatus(s, current))) return { skipped: true, detail: `déjà « ${current} », inchangé` };
+    if (!a.allowed.some((s) => sameStatus(s, current))) {
+      rememberStatus(a, current);
+      return { skipped: true, status: current, detail: `déjà « ${current} », inchangé` };
+    }
     // ClickUp n'accepte que le nom exact du statut (« a faire » sans accent, par exemple)
     const target = await exactStatus(token, ids.listId || task.list?.id, a.target);
     await clickupSend(token, 'PUT', `task/${encodeURIComponent(a.clickupId)}`, { status: target });
-    return { detail: `→ ${target}` };
+    rememberStatus(a, target);
+    return { detail: `→ ${target}`, status: target };
   }
   if (syncLogged.includes(a.key)) return { skipped: true, detail: 'temps déjà loggé' };
   const teamId = a.teamId || ids.teamId;

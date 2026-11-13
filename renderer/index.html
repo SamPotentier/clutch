@@ -115,6 +115,7 @@
         <div class="diff-head">
           <div class="diff-title"><select id="kb-project" title="Projet"></select><button id="kb-add-btn" data-icon="plus" title="Ajouter une tâche ou un ticket ClickUp">Ticket</button><span id="kb-stats"></span></div>
           <div class="diff-tools">
+            <button id="kb-settings" data-icon="settings" title="Colonnes du tableau et statuts ClickUp reliés"></button>
             <button id="kb-reload" data-icon="refresh" title="Relire le fichier"></button>
             <button id="kb-close" data-icon="x" title="Fermer (⌘B)"></button>
           </div>
@@ -128,7 +129,7 @@
       </aside>
       <aside id="inbox-panel" class="hidden">
         <div class="diff-head">
-          <div class="diff-title"><select id="ib-project" title="Kanban où vont les tickets mis dans « À faire »"></select><span id="ib-stats"></span></div>
+          <div class="diff-title"><select id="ib-project" title="Kanban où vont les tickets triés (première colonne)"></select><span id="ib-stats"></span></div>
           <div class="diff-tools">
             <button id="ib-reload" data-icon="refresh" title="Recharger depuis ClickUp"></button>
             <button id="ib-close" data-icon="x" title="Fermer (⌘I)"></button>
@@ -170,13 +171,18 @@
         </div>
       </div>
       <div class="launch">
-        <div class="launch-head">Synchro ClickUp <small>— les cartes liées à un ticket font avancer son statut et proposent de logger le temps</small></div>
+        <div class="launch-head">Kanban <small>— colonnes du tableau, de gauche à droite, et statut ClickUp relié à chacune</small></div>
+        <div id="kb-cols"></div>
+        <div class="launch-add">
+          <button type="button" id="btn-add-col" data-icon="plus">Colonne</button>
+        </div>
+        <datalist id="cu-status-list"></datalist>
+      </div>
+      <div class="launch">
+        <div class="launch-head">Synchro ClickUp <small>— une carte liée à un ticket qui avance d'une colonne le passe au statut relié</small></div>
         <label class="check"><input type="checkbox" name="cuEnabled"> Synchroniser le statut des tickets depuis le kanban</label>
         <div id="cu-sync-fields" class="cu-sync">
-          <label>Statut « à faire »<input name="cuTodo" spellcheck="false"></label>
-          <label>Statut « dev en cours »<input name="cuInProgress" spellcheck="false"></label>
-          <label>Statut « revue de code »<input name="cuReview" spellcheck="false"></label>
-          <label class="check"><input type="checkbox" name="cuLogTime"> Proposer le temps passé en « En cours » (à partir d'1 min) : à corriger puis envoyer</label>
+          <label class="check"><input type="checkbox" name="cuLogTime"> Proposer le temps passé dans les colonnes « chrono » (à partir d'1 min) : à corriger puis envoyer</label>
           <div class="cu-check"><button type="button" id="btn-cu-check">Vérifier</button><span id="cu-check-result"></span></div>
         </div>
       </div>
@@ -192,18 +198,35 @@
   <div id="skill-run" class="overlay hidden">
     <form id="skill-run-form" class="dialog wide">
       <h3 id="skill-run-title"></h3>
-      <div id="skill-run-desc" class="desc"></div>
-      <label id="skill-run-skill-wrap" class="hidden">Skill<select id="skill-run-skill"></select></label>
-      <label>Projet<select name="preset" id="skill-run-preset"></select></label>
-      <div id="skill-run-fields"></div>
-      <label>Lancer dans<select name="target" id="skill-run-target"></select></label>
-      <label>Aperçu<pre id="skill-run-preview" class="preview"></pre></label>
+      <div class="run-cols">
+        <div id="skill-run-task" class="ticket"></div>
+        <div class="run-main">
+          <div id="skill-run-desc" class="desc"></div>
+          <label id="skill-run-skill-wrap" class="hidden">Skill<select id="skill-run-skill"></select></label>
+          <label>Projet<select name="preset" id="skill-run-preset"></select></label>
+          <div id="skill-run-fields"></div>
+          <label>Lancer dans<select name="target" id="skill-run-target"></select></label>
+          <label>Aperçu<pre id="skill-run-preview" class="preview"></pre></label>
+        </div>
+      </div>
       <div class="dialog-actions">
         <button type="button" id="btn-skill-run-edit" class="left">Modifier le modèle…</button>
         <button type="button" data-close>Annuler</button>
         <button type="submit" class="primary">Lancer ⌘↵</button>
       </div>
     </form>
+  </div>
+
+  <div id="ticket-view" class="overlay hidden">
+    <div class="dialog wide">
+      <h3 id="ticket-view-title"></h3>
+      <div id="ticket-view-body" class="ticket"></div>
+      <div class="dialog-actions">
+        <button type="button" data-a="dismiss" class="left" title="Masquer ce ticket de l'inbox">Ignorer</button>
+        <button type="button" data-close>Fermer</button>
+        <button type="button" data-a="todo" class="primary"></button>
+      </div>
+    </div>
   </div>
 
   <div id="skill-edit" class="overlay hidden">
@@ -277,6 +300,7 @@
   <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
   <script src="../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
   <script src="icons.js"></script>
+  <script src="kanban-cols.js"></script>
   <script src="renderer.js"></script>
   <script src="chat.js"></script>
   <script src="kanban.js"></script>

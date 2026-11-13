@@ -1,7 +1,8 @@
 /* ---------- Inbox ClickUp ---------- */
 // ClickUp n'expose pas son Inbox : on liste les tickets à trier des projets ClickUp cochés dans les
-// paramètres. « Ignorer » les masque (mémorisé ici), « À faire » m'assigne dans ClickUp, passe le
-// ticket au statut « à faire » et crée la carte dans le kanban du projet choisi en haut du panneau.
+// paramètres. « Ignorer » les masque (mémorisé ici), l'autre bouton m'assigne dans ClickUp, passe le
+// ticket au statut relié à la première colonne du kanban du projet choisi en haut du panneau
+// (« À faire » par défaut) et y crée la carte.
 
 const IB_REFRESH_MS = 5 * 60 * 1000;
 const IB_MAX_DISMISSED = 2000;
@@ -57,7 +58,8 @@ function ibItem(it) {
   const color = /^#[0-9a-f]{3,8}$/i.test(it.statusColor || '') ? ` style="--st:${it.statusColor}"` : '';
   const where = [it.folder, it.list].filter(Boolean).join(' › ');
   const busy = ib.busy.has(it.id);
-  return `<div class="ib-item${busy ? ' busy' : ''}" data-id="${esc(it.id)}">
+  const first = kbCols()[0];
+  return `<div class="ib-item${busy ? ' busy' : ''}" data-id="${esc(it.id)}" title="Clic pour voir le ticket en entier">
     <div class="kb-cu">
       <button type="button" data-a="open" title="Ouvrir dans ClickUp">${icon('link')}${esc(ibRef(it))}</button>
       <span class="ib-status"${color}>${esc(it.status || '')}</span>
@@ -69,7 +71,7 @@ function ibItem(it) {
       <span class="ib-who">${it.mine ? 'assigné à toi' : 'personne'}${it.priority ? ` · ${esc(it.priority)}` : ''}</span>
       <span class="ib-actions">
         <button type="button" data-a="dismiss" title="Masquer ce ticket de l'inbox"${busy ? ' disabled' : ''}>Ignorer</button>
-        <button type="button" class="primary" data-a="todo" title="M'assigner dans ClickUp, passer le ticket en « à faire » et l'ajouter à « À faire » du kanban"${busy || !ib.boardDir ? ' disabled' : ''}>${busy ? icon('spinner', 'ib-spin') : icon('plus')}À faire</button>
+        <button type="button" class="primary" data-a="todo" title="M'assigner dans ClickUp${first.status ? `, passer le ticket en « ${esc(first.status)} »` : ''} et l'ajouter à « ${esc(first.label)} » du kanban"${busy || !ib.boardDir ? ' disabled' : ''}>${busy ? icon('spinner', 'ib-spin') : icon('plus')}${esc(first.label)}</button>
       </span>
     </div>
   </div>`;
@@ -124,10 +126,11 @@ async function ibToTodo(it) {
     if (res.error) return fail(res.error);
     it.mine = true;
   }
-  // Statut « à faire » du projet de destination (réglage de synchro du preset). Un échec n'empêche
-  // pas d'ajouter la carte : il est signalé à la fin
+  // Statut relié à la première colonne du projet de destination. Un échec n'empêche pas d'ajouter
+  // la carte : il est signalé à la fin
   const preset = spacePresets().find((p) => p.cwd === dir);
-  const moved = await api.clickupAdvance(it.id, state.inbox.statuses, { ...CU_SYNC_DEFAULTS, ...preset?.clickupSync }.todo);
+  const first = kbColumns(preset)[0];
+  const moved = first.status ? await api.clickupAdvance(it.id, state.inbox.statuses, first.status) : { ok: true, skipped: true };
   if (moved.status) it.status = moved.status;
   // Relu après l'assignation et le changement de statut : la carte porte les données à jour
   const res = await api.clickupTask(it.id);
@@ -135,20 +138,50 @@ async function ibToTodo(it) {
   const board = await api.kanbanRead(dir);
   if (board.error) return fail(`assigné, mais .clutch/kanban.json est illisible (${board.error})`);
   if (!board.tasks.some((t) => t?.clickup?.id === it.id)) {
-    board.tasks.push(kbFromClickup({ id: `t-${uid().slice(0, 6)}`, status: 'todo', created: kbNow() }, res.task));
+    board.tasks.push(kbFromClickup({ id: `t-${uid().slice(0, 6)}`, status: first.id, created: kbNow() }, res.task));
     await api.kanbanWrite(dir, board.tasks);
   }
   ib.busy.delete(it.id);
   if (dir === ib.boardDir) ib.onBoard.add(it.id);
   renderInbox();
   const where = preset?.name || shortPath(dir);
-  if (moved.error) toast(`${ibRef(it)} assigné et ajouté à « À faire » (${where}), mais son statut ClickUp n'a pas changé : ${moved.error}`, 'err');
-  else toast(`${ibRef(it)} assigné et ajouté à « À faire » (${where})${moved.skipped ? '' : ` · ClickUp → ${moved.status}`}`);
+  if (moved.error) toast(`${ibRef(it)} assigné et ajouté à « ${first.label} » (${where}), mais son statut ClickUp n'a pas changé : ${moved.error}`, 'err');
+  else toast(`${ibRef(it)} assigné et ajouté à « ${first.label} » (${where})${moved.skipped ? '' : ` · ClickUp → ${moved.status}`}`);
 }
+
+/* Détail d'un ticket : clic sur une ligne, le ticket est relu en entier dans ClickUp */
+let ibViewing = null;
+async function ibView(it) {
+  ibViewing = it;
+  const first = kbCols()[0];
+  const todo = $('#ticket-view [data-a="todo"]');
+  todo.textContent = first.label;
+  todo.disabled = !ib.boardDir;
+  $('#ticket-view-title').textContent = it.name;
+  const body = $('#ticket-view-body');
+  body.innerHTML = '<div class="tk-none">Chargement du ticket…</div>';
+  $('#ticket-view').classList.remove('hidden');
+  const res = await api.clickupTask(it.id);
+  if (ibViewing !== it) return;
+  if (res.error) body.innerHTML = `<div class="tk-none">${esc(res.error)}</div>`;
+  else body.innerHTML = kbTicketInfo({ description: res.task.description, clickup: res.task });
+}
+$('#ticket-view').addEventListener('click', (e) => {
+  const a = e.target.closest('[data-a]')?.dataset.a;
+  const it = ibViewing;
+  if (!a || !it) return;
+  closeOverlay($('#ticket-view'));
+  if (a === 'dismiss') ibDismiss([it.id]);
+  else if (a === 'todo') ibToTodo(it);
+});
 
 $('#inbox-panel').addEventListener('click', (e) => {
   const b = e.target.closest('[data-a]');
-  if (!b) return;
+  if (!b) {
+    const it = ib.items.find((x) => x.id === e.target.closest('.ib-item')?.dataset.id);
+    if (it && !ib.busy.has(it.id)) ibView(it);
+    return;
+  }
   const a = b.dataset.a;
   if (a === 'settings') return openSettings();
   if (a === 'restore') {

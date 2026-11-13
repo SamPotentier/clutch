@@ -836,12 +836,12 @@ function openPresetModal(p) {
   renderColors();
   const cu = { ...CU_SYNC_DEFAULTS, ...p?.clickupSync };
   f.cuEnabled.checked = cu.enabled;
-  f.cuTodo.value = cu.todo;
-  f.cuInProgress.value = cu.inProgress;
-  f.cuReview.value = cu.review;
   f.cuLogTime.checked = cu.logTime;
   $('#cu-check-result').textContent = '';
   renderCuSync();
+  modalCols = kbColumns(p);
+  renderKbCols();
+  loadCuStatusList();
   $('#modal').classList.remove('hidden');
   f.name.focus();
 }
@@ -921,23 +921,71 @@ $('#btn-add-subs').onclick = async () => {
 };
 $('#preset-form').cwd.addEventListener('change', loadModalSubdirs);
 
+/* Colonnes du kanban du preset : nom, statut ClickUp relié, chrono (voir kanban-cols.js) */
+let modalCols = [];
+function renderKbCols() {
+  const el = $('#kb-cols');
+  el.innerHTML = '';
+  modalCols.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'pane-row col-row';
+    row.innerHTML = `
+      <input class="col-label" spellcheck="false" placeholder="Nom de la colonne"${c.id ? ` title="« status » dans kanban.json : ${esc(c.id)}"` : ''}>
+      <input class="col-status" spellcheck="false" list="cu-status-list" placeholder="Statut ClickUp (facultatif)" title="Statut donné au ticket quand sa carte avance dans cette colonne">
+      <label class="check" title="Compter le temps passé dans cette colonne, proposé pour ClickUp quand la carte avance"><input type="checkbox" class="col-timer"> chrono</label>
+      <button type="button" class="pane-up" title="Vers la gauche du tableau"${i ? '' : ' disabled'}>${icon('arrow-up')}</button>
+      <button type="button" class="pane-del" title="Retirer (ses cartes iront dans la première colonne)"${modalCols.length === 1 ? ' disabled' : ''}>${icon('x')}</button>`;
+    row.querySelector('.col-label').value = c.label;
+    row.querySelector('.col-status').value = c.status;
+    row.querySelector('.col-timer').checked = c.timer;
+    row.querySelector('.col-label').oninput = (e) => { c.label = e.target.value; };
+    row.querySelector('.col-status').oninput = (e) => { c.status = e.target.value; };
+    row.querySelector('.col-timer').onchange = (e) => { c.timer = e.target.checked; };
+    row.querySelector('.pane-up').onclick = () => { modalCols.splice(i - 1, 0, ...modalCols.splice(i, 1)); renderKbCols(); };
+    row.querySelector('.pane-del').onclick = () => { modalCols.splice(i, 1); renderKbCols(); };
+    el.appendChild(row);
+  });
+}
+$('#btn-add-col').onclick = () => {
+  modalCols.push({ id: '', label: '', status: '', timer: false });
+  renderKbCols();
+  $('#kb-cols').lastChild.querySelector('.col-label').focus();
+};
+// Colonnes saisies : celles sans nom sont ignorées, les nouvelles reçoivent un id tiré de leur nom
+function formKbCols() {
+  const cols = modalCols.map((c) => ({ ...c, label: c.label.trim(), status: c.status.trim() })).filter((c) => c.label);
+  for (const c of cols) c.id ||= kbNewColId(c.label, cols.map((x) => x.id).filter(Boolean));
+  return cols;
+}
+
 /* Synchro ClickUp du preset (appliquée par le processus principal) */
-const CU_SYNC_DEFAULTS = { enabled: false, todo: 'à faire', inProgress: 'dev en cours', review: 'revue de code à faire', logTime: true };
+const CU_SYNC_DEFAULTS = { enabled: false, logTime: true };
 const renderCuSync = () => $('#cu-sync-fields').classList.toggle('off', !$('#preset-form').cuEnabled.checked);
 $('#preset-form').cuEnabled.addEventListener('change', renderCuSync);
 function formCuSync(f) {
-  return { enabled: f.cuEnabled.checked, todo: f.cuTodo.value.trim(), inProgress: f.cuInProgress.value.trim(), review: f.cuReview.value.trim(), logTime: f.cuLogTime.checked };
+  return { enabled: f.cuEnabled.checked, logTime: f.cuLogTime.checked };
+}
+// Statuts de la liste ClickUp du projet, proposés dans le champ « Statut ClickUp » des colonnes
+const fillCuStatusList = (statuses) => { $('#cu-status-list').innerHTML = (statuses || []).map((s) => `<option value="${esc(s)}">`).join(''); };
+async function loadCuStatusList() {
+  const p = editing;
+  fillCuStatusList([]);
+  if (!p?.cwd) return;
+  const res = await api.clickupCheckStatuses(p.cwd, []);
+  if (editing === p && !$('#modal').classList.contains('hidden')) fillCuStatusList(res.statuses);
 }
 $('#btn-cu-check').onclick = async () => {
   const f = $('#preset-form');
   const out = $('#cu-check-result');
-  const cu = formCuSync(f);
+  const names = [...new Set(formKbCols().map((c) => c.status).filter(Boolean))];
   out.className = '';
   out.textContent = 'Vérification…';
-  const res = await api.clickupCheckStatuses(f.cwd.value.trim(), [cu.todo, cu.inProgress, cu.review]);
+  const res = await api.clickupCheckStatuses(f.cwd.value.trim(), names);
+  fillCuStatusList(res.statuses);
   out.className = res.error || res.missing.length ? 'err' : 'ok';
   out.textContent = res.error
-    || (res.missing.length ? `Introuvable dans « ${res.list} » : ${res.missing.join(', ')}. Statuts de la liste : ${res.statuses.join(', ')}` : `Les trois statuts existent dans « ${res.list} »`);
+    || (res.missing.length ? `Introuvable dans « ${res.list} » : ${res.missing.join(', ')}. Statuts de la liste : ${res.statuses.join(', ')}`
+      : names.length ? `Les statuts reliés existent dans « ${res.list} »` : `Aucun statut relié. Statuts de « ${res.list} » : ${res.statuses.join(', ')}`);
 };
 
 const closeModal = () => { $('#modal').classList.add('hidden'); focusActive(); };
@@ -952,6 +1000,9 @@ $('#preset-form').onsubmit = (e) => {
   const cu = formCuSync(f);
   // Synchro désactivée et réglages par défaut : rien d'enregistré, le preset reste comme avant
   if (cu.enabled || editing?.clickupSync || Object.keys(CU_SYNC_DEFAULTS).some((k) => k !== 'enabled' && cu[k] !== CU_SYNC_DEFAULTS[k])) data.clickupSync = cu;
+  // Pareil pour les colonnes du kanban (toutes sans nom : on garde les précédentes)
+  const columns = formKbCols();
+  if (columns.length && (editing?.kanban || JSON.stringify(columns) !== JSON.stringify(kbColumns(null)))) data.kanban = { ...editing?.kanban, columns };
   if (editing) Object.assign(editing, data);
   else state.presets.push({ id: uid(), ...data });
   if (data.accountId !== state.account) renderSpaceSwitch();
@@ -960,6 +1011,9 @@ $('#preset-form').onsubmit = (e) => {
   renderPresets();
   closeModal();
   scanSkills();
+  // Le tableau affiché reprend les nouvelles colonnes
+  if (state.kanban.open) loadKanban();
+  if (state.inbox.open) renderInbox();
 };
 $('#btn-cancel').onclick = closeModal;
 $('#btn-browse').onclick = async () => {
@@ -1133,6 +1187,11 @@ function openSkillRun(skill, presetId) {
   $('#skill-run-title').textContent = runTask ? `Lancer « ${runTask.title} »` : skill.name;
   $('#skill-run-desc').textContent = skill.description || skill.invoke;
   $('#skill-run-skill-wrap').classList.toggle('hidden', !runTask);
+  // Depuis une carte : le détail de la tâche à gauche, le lancement à droite
+  const info = runTask ? kbTicketInfo(runTask) : '';
+  $('#skill-run-task').innerHTML = info;
+  $('#skill-run-task').scrollTop = 0;
+  $('#skill-run-form').classList.toggle('with-task', !!info);
   if (runTask) renderRunSkills(skill);
   $('#btn-skill-run-edit').classList.toggle('hidden', skill.key === PLAIN_TASK.key);
 
@@ -1895,7 +1954,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!$('#palette').classList.contains('hidden')) return closePalette();
     if (!$('#modal').classList.contains('hidden')) return closeModal();
-    const open = document.querySelector('#accounts:not(.hidden), #settings:not(.hidden), #skill-edit:not(.hidden), #skill-run:not(.hidden)');
+    const open = document.querySelector('#accounts:not(.hidden), #settings:not(.hidden), #skill-edit:not(.hidden), #skill-run:not(.hidden), #ticket-view:not(.hidden)');
     if (open) return closeOverlay(open);
   }
   if (!e.metaKey || e.altKey || e.ctrlKey) return;

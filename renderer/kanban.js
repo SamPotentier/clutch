@@ -2,21 +2,14 @@
 // Les tâches vivent dans <projet>/.clutch/kanban.json : l'app les affiche et les édite,
 // un skill Claude peut les faire avancer en modifiant le même fichier, surveillé en direct.
 
-const KB_COLS = [
-  { id: 'todo', label: 'À faire' },
-  { id: 'in_progress', label: 'En cours' },
-  { id: 'review', label: 'À relire' },
-];
-// Statuts tolérés à la lecture (écrits à la main ou par Claude), ramenés à la forme canonique.
-// « done » n'a pas de colonne : la tâche reste dans le fichier mais n'est plus affichée.
-const KB_ALIASES = { todo: 'todo', afaire: 'todo', backlog: 'todo', inprogress: 'in_progress', doing: 'in_progress', encours: 'in_progress', wip: 'in_progress', review: 'review', toreview: 'review', inreview: 'review', arelire: 'review', done: 'done', fait: 'done', termine: 'done' };
-const kbStatus = (s) => KB_ALIASES[String(s || '').normalize('NFD').replace(/[^a-z]/gi, '').toLowerCase()] || 'todo';
+// Les colonnes et le statut ClickUp relié à chacune se règlent par projet (kanban-cols.js, formulaire du preset).
 
 const kb = { dir: '', tasks: [], error: '', loaded: false, seen: new Map(), editing: null, dragId: null, flash: new Map(), unsynced: new Map() };
 // Numéro de ticket ClickUp : #86c0abc12, CICD-123 ou un lien app.clickup.com/t/…
 const KB_TICKET = /^(#\S+|[A-Za-z][\w]*-\d+|https?:\/\/(app\.)?clickup\.com\/t\/\S+)$/;
 
 const kbPreset = () => spacePresets().find((p) => p.id === state.kanban.presetId);
+const kbCols = () => kbColumns(kbPreset());
 const kbNow = () => new Date().toISOString();
 
 function kbAgo(iso) {
@@ -71,7 +64,8 @@ async function loadKanban() {
   kb.error = res.error || '';
   // Pendant une erreur (fichier en cours d'écriture ou cassé), on garde l'affichage précédent
   if (!kb.error) {
-    kb.tasks = res.tasks.filter((t) => t && t.id != null && t.title).map((t) => ({ ...t, id: String(t.id), status: kbStatus(t.status) }));
+    const cols = kbCols();
+    kb.tasks = res.tasks.filter((t) => t && t.id != null && t.title).map((t) => ({ ...t, id: String(t.id), status: kbStatus(t.status, cols) }));
     // Cartes déplacées ou ajoutées depuis l'extérieur (Claude) : on les fait briller un instant
     if (kb.loaded) {
       for (const t of kb.tasks) if (kb.seen.get(t.id) !== t.status) kb.flash.set(t.id, Date.now());
@@ -106,7 +100,7 @@ function kbCard(t) {
     </div>`;
   }
   const flash = Date.now() - (kb.flash.get(t.id) || 0) < 2500 ? ' flash' : '';
-  return `<div class="kb-card${flash}" draggable="true" data-id="${esc(t.id)}" title="Clic pour lancer un skill sur cette tâche · glisse pour changer de colonne">
+  return `<div class="kb-card${flash}" draggable="true" data-id="${esc(t.id)}" title="Clic pour voir la tâche et lancer un skill dessus · glisse pour changer de colonne">
     ${t.clickup ? kbClickupLine(t) : ''}
     <div class="kb-title">${esc(t.title)}</div>
     ${t.description ? `<div class="kb-desc">${esc(t.description)}</div>` : ''}
@@ -130,7 +124,27 @@ function kbClickupLine(t) {
   return `<div class="kb-cu"><button type="button" data-a="cu-open" title="Ouvrir dans ClickUp">${icon('link')}${esc(cu.customId || cu.id)}</button>${err ? `<em class="kb-unsynced" title="${esc(err)}">non synchronisé</em>` : ''}<span>${esc(bits.join(' · '))}</span></div>`;
 }
 
-// Temps déjà loggé dans ClickUp, et chrono en cours pour une carte « En cours »
+// Détail d'une tâche, affiché quand on clique dessus (lancement depuis une carte, inbox) : tout ce que
+// la carte sait du ticket ClickUp, et la description en entier
+function kbTicketInfo(t) {
+  const cu = t.clickup || {};
+  const url = /^https?:\/\//.test(cu.url || '') ? cu.url : cu.id ? `https://app.clickup.com/t/${cu.id}` : '';
+  const color = /^#[0-9a-f]{3,8}$/i.test(cu.statusColor || '') ? ` style="--st:${cu.statusColor}"` : '';
+  const rows = [
+    ['Priorité', cu.priority], ['Assigné à', cu.assignees?.join(', ')], ['Début', cu.start], ['Échéance', cu.due],
+    ['Étiquettes', cu.tags?.join(', ')], ['Liste', cu.list], ['Créé', [cu.created && `le ${cu.created}`, cu.creator && `par ${cu.creator}`].filter(Boolean).join(' ')],
+  ].filter(([, v]) => v);
+  const checklists = (cu.checklists || []).filter((c) => c.items?.length);
+  return [
+    url && `<div class="tk-head"><a href="${esc(url)}" title="Ouvrir dans ClickUp">${icon('link')}${esc(cu.customId || cu.id)}</a>${cu.status ? `<span class="ib-status"${color}>${esc(cu.status)}</span>` : ''}</div>`,
+    rows.length && `<dl class="tk-meta">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`,
+    t.description ? `<div class="tk-desc md">${md(t.description)}</div>` : url && '<div class="tk-none">Pas de description.</div>',
+    cu.subtasks?.length && `<div class="tk-sec">Sous-tâches</div><ul class="tk-list">${cu.subtasks.map((s) => `<li><span>${esc(s.name)}</span>${s.status ? `<span class="ib-status">${esc(s.status)}</span>` : ''}</li>`).join('')}</ul>`,
+    ...checklists.map((c) => `<div class="tk-sec">${esc(c.name)}</div><ul class="tk-list">${c.items.map((i) => `<li${i.done ? ' class="done"' : ''}>${icon(i.done ? 'box-done' : 'box-todo')}<span>${esc(i.name)}</span></li>`).join('')}</ul>`),
+  ].filter(Boolean).join('');
+}
+
+// Temps déjà loggé dans ClickUp, et chrono en cours pour une carte dans une colonne chronométrée
 function kbTiming(t) {
   const ms = t.timing?.loggedMs || 0;
   if (!ms && !t.timing?.startedAt) return '';
@@ -143,6 +157,9 @@ const kbSyncKey = (dir, taskId) => `${dir}\n${taskId}`;
 api.onClickupSync((ev) => {
   const key = kbSyncKey(ev.project, ev.taskId);
   const what = ev.action === 'time' ? 'temps' : 'statut';
+  // Statut du ticket après la synchro : la carte l'affiche tout de suite, sans recharger depuis ClickUp
+  const t = ev.status && ev.project === kb.dir && kb.tasks.find((x) => x.id === ev.taskId);
+  if (t?.clickup) t.clickup.status = ev.status;
   if (ev.ok) {
     kb.unsynced.delete(key);
     toast(`ClickUp ${ev.ref} : ${ev.detail || what + ' synchronisé'}`);
@@ -153,7 +170,7 @@ api.onClickupSync((ev) => {
   if (ev.project === kb.dir) renderKanban();
 });
 
-/* Temps à valider : une carte liée qui passe en « À relire » propose le temps passé en « En cours ».
+/* Temps à valider : une carte liée qui quitte une colonne chronométrée vers la suite propose le temps passé.
    Rien n'est loggé dans ClickUp sans « Envoyer ». La fenêtre reste affichée sans prendre le focus :
    un skill peut déplacer la carte pendant qu'on tape ailleurs. */
 const kbTimePrompts = new Set(); // ids affichés
@@ -198,7 +215,8 @@ function renderKanban() {
   const err = $('#kb-error');
   err.classList.toggle('hidden', !kb.error);
   err.textContent = kb.error ? `.clutch/kanban.json est illisible (${kb.error}). Le tableau est en lecture seule tant que le fichier n'est pas corrigé.` : '';
-  const n = kb.tasks.filter((t) => t.status !== 'done').length;
+  const cols = kbCols();
+  const n = kb.tasks.filter((t) => cols.some((c) => c.id === t.status)).length;
   $('#kb-stats').textContent = kb.dir ? `${n} tâche${n > 1 ? 's' : ''}` : '';
   $('#kb-stats').title = kb.dir ? `${shortPath(kb.dir)}/.clutch/kanban.json` : '';
   if (!kb.dir) {
@@ -209,10 +227,10 @@ function renderKanban() {
   $('#kb-add-btn').classList.toggle('hidden', !!kb.error);
   if (kb.error) kbCloseAdd();
   const editFocus = document.activeElement?.closest?.('.kb-card.editing') ? document.activeElement.className : '';
-  board.innerHTML = KB_COLS.map((c) => {
+  board.innerHTML = cols.map((c) => {
     const tasks = kb.tasks.filter((t) => t.status === c.id);
-    return `<section class="kb-col" data-status="${c.id}">
-      <header><span class="kb-dot"></span>${c.label}<span class="kb-count">${tasks.length}</span></header>
+    return `<section class="kb-col${c.timer ? ' timed' : ''}" data-status="${esc(c.id)}">
+      <header${c.status ? ` title="Statut ClickUp relié : ${esc(c.status)}"` : ''}><span class="kb-dot"></span>${esc(c.label)}<span class="kb-count">${tasks.length}</span></header>
       <div class="kb-cards">${tasks.map(kbCard).join('')}</div>
     </section>`;
   }).join('');
@@ -258,7 +276,7 @@ function kbFromClickup(t, cu) {
   return t;
 }
 
-/* Ajout : le bouton « Ticket » de l'en-tête ouvre un champ, la tâche arrive dans « À faire » */
+/* Ajout : le bouton « Ticket » de l'en-tête ouvre un champ, la tâche arrive dans la première colonne */
 const kbAddInput = () => $('#kb-add input');
 function kbAddMessage(text) {
   $('#kb-add-msg').textContent = text;
@@ -299,7 +317,7 @@ async function kbAddTicket(ref) {
     return input.focus();
   }
   const now = kbNow();
-  kb.tasks.push(kbFromClickup({ id: `t-${uid().slice(0, 6)}`, status: 'todo', created: now }, res.task));
+  kb.tasks.push(kbFromClickup({ id: `t-${uid().slice(0, 6)}`, status: kbCols()[0].id, created: now }, res.task));
   kb.flash.set(kb.tasks.at(-1).id, Date.now());
   kbCloseAdd();
   saveKanban();
@@ -312,7 +330,7 @@ $('#kb-add').addEventListener('submit', (e) => {
   if (!title || kb.error || input.disabled) return;
   if (KB_TICKET.test(title)) return kbAddTicket(title);
   const now = kbNow();
-  kb.tasks.push({ id: `t-${uid().slice(0, 6)}`, title, status: 'todo', created: now, updated: now });
+  kb.tasks.push({ id: `t-${uid().slice(0, 6)}`, title, status: kbCols()[0].id, created: now, updated: now });
   kb.flash.set(kb.tasks.at(-1).id, Date.now());
   kbCloseAdd();
   saveKanban();
@@ -339,7 +357,7 @@ $('#kb-board').addEventListener('click', (e) => {
   const card = e.target.closest('.kb-card');
   if (!card) return;
   if (!b) {
-    // Clic sur la carte : choisir un skill et un projet, puis lancer
+    // Clic sur la carte : le détail de la tâche, puis choisir un skill et un projet pour lancer
     const t = !card.classList.contains('editing') && kb.tasks.find((x) => x.id === card.dataset.id);
     if (t) openTaskRun(t, state.kanban.presetId);
     return;
@@ -443,6 +461,13 @@ $('#kb-project').onchange = (e) => {
 $('#btn-kanban').onclick = toggleKanban;
 $('#kb-close').onclick = toggleKanban;
 $('#kb-reload').onclick = loadKanban;
+// Colonnes et statuts reliés : dans le formulaire du projet
+$('#kb-settings').onclick = () => {
+  const p = kbPreset();
+  if (!p) return;
+  openPresetModal(p);
+  $('#kb-cols').scrollIntoView({ block: 'center' });
+};
 api.onKanbanChanged((dir) => { if (dir === kb.dir) loadKanban(); });
 
 function initKanban() {
