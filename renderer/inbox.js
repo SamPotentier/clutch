@@ -1,7 +1,7 @@
 /* ---------- Inbox ClickUp ---------- */
 // ClickUp n'expose pas son Inbox : on liste les tickets à trier des projets ClickUp cochés dans les
-// paramètres. « Ignorer » les masque (mémorisé ici), « À faire » m'assigne dans ClickUp et crée la
-// carte dans le kanban du projet choisi en haut du panneau.
+// paramètres. « Ignorer » les masque (mémorisé ici), « À faire » m'assigne dans ClickUp, passe le
+// ticket au statut « à faire » et crée la carte dans le kanban du projet choisi en haut du panneau.
 
 const IB_REFRESH_MS = 5 * 60 * 1000;
 const IB_MAX_DISMISSED = 2000;
@@ -69,7 +69,7 @@ function ibItem(it) {
       <span class="ib-who">${it.mine ? 'assigné à toi' : 'personne'}${it.priority ? ` · ${esc(it.priority)}` : ''}</span>
       <span class="ib-actions">
         <button type="button" data-a="dismiss" title="Masquer ce ticket de l'inbox"${busy ? ' disabled' : ''}>Ignorer</button>
-        <button type="button" class="primary" data-a="todo" title="M'assigner dans ClickUp et l'ajouter à « À faire » du kanban"${busy || !ib.boardDir ? ' disabled' : ''}>${busy ? icon('spinner', 'ib-spin') : icon('plus')}À faire</button>
+        <button type="button" class="primary" data-a="todo" title="M'assigner dans ClickUp, passer le ticket en « à faire » et l'ajouter à « À faire » du kanban"${busy || !ib.boardDir ? ' disabled' : ''}>${busy ? icon('spinner', 'ib-spin') : icon('plus')}À faire</button>
       </span>
     </div>
   </div>`;
@@ -124,7 +124,12 @@ async function ibToTodo(it) {
     if (res.error) return fail(res.error);
     it.mine = true;
   }
-  // Relu après l'assignation : la carte porte les personnes assignées à jour
+  // Statut « à faire » du projet de destination (réglage de synchro du preset). Un échec n'empêche
+  // pas d'ajouter la carte : il est signalé à la fin
+  const preset = spacePresets().find((p) => p.cwd === dir);
+  const moved = await api.clickupAdvance(it.id, state.inbox.statuses, { ...CU_SYNC_DEFAULTS, ...preset?.clickupSync }.todo);
+  if (moved.status) it.status = moved.status;
+  // Relu après l'assignation et le changement de statut : la carte porte les données à jour
   const res = await api.clickupTask(it.id);
   if (res.error) return fail(res.error);
   const board = await api.kanbanRead(dir);
@@ -136,7 +141,9 @@ async function ibToTodo(it) {
   ib.busy.delete(it.id);
   if (dir === ib.boardDir) ib.onBoard.add(it.id);
   renderInbox();
-  toast(`${ibRef(it)} assigné et ajouté à « À faire » (${spacePresets().find((p) => p.cwd === dir)?.name || shortPath(dir)})`);
+  const where = preset?.name || shortPath(dir);
+  if (moved.error) toast(`${ibRef(it)} assigné et ajouté à « À faire » (${where}), mais son statut ClickUp n'a pas changé : ${moved.error}`, 'err');
+  else toast(`${ibRef(it)} assigné et ajouté à « À faire » (${where})${moved.skipped ? '' : ` · ClickUp → ${moved.status}`}`);
 }
 
 $('#inbox-panel').addEventListener('click', (e) => {

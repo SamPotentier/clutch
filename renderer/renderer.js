@@ -114,6 +114,9 @@ function persist() {
 
 /* ---------- Terminaux ---------- */
 
+// ⌘⌫ efface jusqu'au début de la ligne (Ctrl-U), ⌥⌫ le mot précédent (Ctrl-W) ; avec fn (⌦) : vers la droite
+const MAC_ERASE = { 'Meta+Backspace': '\x15', 'Alt+Backspace': '\x17', 'Meta+Delete': '\x0b', 'Alt+Delete': '\x1bd' };
+
 async function openTerminal({ name, cwd, command, color, presetId, accountId = state.account, group }) {
   const sameName = state.tabs.filter((t) => t.baseName === name).length;
   const tab = {
@@ -146,6 +149,15 @@ async function openTerminal({ name, cwd, command, color, presetId, accountId = s
       return;
     }
     api.write(tab.ptyId, data);
+  });
+  // xterm.js ignore ⌘ et envoie ⌥⌫ en Échap+DEL : on reprend les raccourcis d'effacement de Terminal/iTerm
+  tab.term.attachCustomKeyEventHandler((e) => {
+    if (e.type !== 'keydown' || e.ctrlKey || e.shiftKey || e.metaKey === e.altKey) return true;
+    const seq = MAC_ERASE[`${e.metaKey ? 'Meta' : 'Alt'}+${e.key}`];
+    if (!seq) return true;
+    e.preventDefault();
+    tab.term.input(seq);
+    return false;
   });
   tab.term.onResize(({ cols, rows }) => tab.ptyId && api.resize(tab.ptyId, cols, rows));
   // Claude Code met « ◐ ◑ ◒ ◓ » en tête du titre pendant qu'il travaille, « ✳ » quand c'est à nous

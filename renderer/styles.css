@@ -925,6 +925,19 @@ body.dragging-term .xterm { pointer-events: none; }
 .toast.err { color: var(--text); border-color: var(--danger); }
 .toast.err .ic { color: var(--danger); }
 .toast.out { opacity: 0; }
+/* Temps à valider avant envoi à ClickUp : reste affiché au-dessus des notifications */
+.time-prompt { pointer-events: auto; width: 320px; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: var(--r2); font-size: 12px; background: var(--bg-2); border: 1px solid var(--accent); color: var(--text); box-shadow: var(--shadow); }
+.time-prompt small { color: var(--muted); font-size: 11px; }
+.kbt-head { display: flex; align-items: baseline; gap: 5px; }
+.kbt-head b { font-family: var(--mono); color: var(--accent); }
+.kbt-head small { margin-left: auto; }
+.kbt-title { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kbt-time { display: flex; align-items: center; gap: 5px; }
+.kbt-time input { width: 52px; padding: 4px 6px; text-align: right; font-size: 13px; }
+.kbt-time small { margin-left: auto; text-align: right; }
+.kbt-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.kbt-actions button { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; padding: 3px 10px; }
+.kbt-actions .ic { width: 12px; height: 12px; }
 .dialog label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 12.5px; }
 
 /* ---------- Inbox ClickUp ---------- */

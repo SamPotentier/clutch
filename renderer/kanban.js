@@ -153,6 +153,46 @@ api.onClickupSync((ev) => {
   if (ev.project === kb.dir) renderKanban();
 });
 
+/* Temps à valider : une carte liée qui passe en « À relire » propose le temps passé en « En cours ».
+   Rien n'est loggé dans ClickUp sans « Envoyer ». La fenêtre reste affichée sans prendre le focus :
+   un skill peut déplacer la carte pendant qu'on tape ailleurs. */
+const kbTimePrompts = new Set(); // ids affichés
+function kbTimePrompt(p) {
+  if (kbTimePrompts.has(p.id)) return;
+  kbTimePrompts.add(p.id);
+  const min = Math.max(1, Math.round(p.duration / 60000));
+  const hm = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const day = new Date(p.start).toDateString() === new Date().toDateString() ? '' : `${new Date(p.start).toLocaleDateString([], { day: 'numeric', month: 'short' })}, `;
+  const el = document.createElement('form');
+  el.className = 'time-prompt';
+  el.innerHTML = `<div class="kbt-head">Temps passé sur <b>${esc(p.ref)}</b><small>${esc(p.project.split('/').filter(Boolean).pop() || '')}</small></div>
+    ${p.title ? `<div class="kbt-title" title="${esc(p.title)}">${esc(p.title)}</div>` : ''}
+    <div class="kbt-time">
+      <input name="h" type="number" min="0" step="1" value="${Math.floor(min / 60)}" aria-label="Heures"> h
+      <input name="m" type="number" min="0" step="1" value="${min % 60}" aria-label="Minutes"> min
+      <small>en cours ${esc(day)}de ${esc(hm(p.start))} à ${esc(hm(p.start + p.duration))}</small>
+    </div>
+    <div class="kbt-actions">
+      <button type="button" data-a="skip" title="Ne rien logger dans ClickUp pour ce passage en cours">Ne pas logger</button>
+      <button type="submit" class="primary">${icon('send')}Envoyer</button>
+    </div>`;
+  const done = (duration) => {
+    kbTimePrompts.delete(p.id);
+    el.remove();
+    api.clickupTimeConfirm(p.id, duration);
+  };
+  el.onsubmit = (e) => {
+    e.preventDefault();
+    const total = (Math.floor(+el.elements.h.value) || 0) * 60 + (Math.floor(+el.elements.m.value) || 0);
+    if (total <= 0) return el.elements.m.focus();
+    done(total * 60000);
+  };
+  el.querySelector('[data-a="skip"]').onclick = () => done(0);
+  $('#toasts').prepend(el);
+}
+api.onClickupTimePending(kbTimePrompt);
+api.clickupTimePending().then((list) => list.forEach(kbTimePrompt));
+
 function renderKanban() {
   const board = $('#kb-board');
   const err = $('#kb-error');

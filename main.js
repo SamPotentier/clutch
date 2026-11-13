@@ -639,7 +639,8 @@ ipcMain.handle('clickup:task', (_e, ref) => clickupTask(ref));
 
 /* ---------- Synchro ClickUp depuis le kanban ---------- */
 // Les changements de colonne du kanban (interface, skill Claude ou glisser-déposer) font avancer
-// le ticket ClickUp lié et loggent le temps passé en « En cours ». Jamais de recul, jamais de commentaire.
+// le ticket ClickUp lié et proposent de logger le temps passé en « En cours » (envoyé seulement après
+// validation dans l'interface). Jamais de recul, jamais de commentaire.
 
 const SYNC_DEFAULTS = { enabled: false, todo: 'à faire', inProgress: 'dev en cours', review: 'revue de code à faire', logTime: true };
 const SYNC_MIN_MS = 60 * 1000;
@@ -658,6 +659,7 @@ let syncPresets = [];
 const syncTables = new Map(); // projet -> Map(id de tâche -> statut lu en dernier)
 let syncQueue = [];
 let syncLogged = []; // clés « taskId:startedAt » des entrées de temps déjà créées
+let syncPending = []; // temps proposés, en attente de validation : { id, project, dir, taskId, clickupId, ref, title, teamId, start, duration, key }
 let syncTimer = null;
 const syncStarted = new Map(); // « projet:tâche » -> startedAt, au cas où un skill réécrit la carte sans timing
 let syncRunning = false;
@@ -729,7 +731,11 @@ function syncTransition(cfg, dir, task, from, to) {
     // Le segment est clos tout de suite ; loggedMs n'augmente qu'une fois l'entrée créée dans ClickUp
     patchKanbanTask(dir, task.id, (t) => { t.timing = { loggedMs: 0, ...t.timing, startedAt: null }; });
     if (cfg.logTime && duration >= SYNC_MIN_MS) {
-      enqueueSync({ ...base, kind: 'time', teamId: task.clickup.teamId, start, duration, key: `${task.id}:${startedAt}` });
+      // Rien ne part tout seul : l'interface propose la durée, on la corrige puis on l'envoie (clickup:time-confirm)
+      const pending = { ...base, id: Math.random().toString(36).slice(2, 10), title: task.title, teamId: task.clickup.teamId, start, duration, key: `${task.id}:${startedAt}` };
+      syncPending.push(pending);
+      persistSyncQueue();
+      if (win && !win.isDestroyed()) win.webContents.send('clickup:time-pending', pending);
     }
   }
 }
@@ -744,6 +750,7 @@ function persistSyncQueue() {
   mainOwned.clickupQueue = syncQueue;
   syncLogged = syncLogged.slice(-500);
   mainOwned.clickupLogged = syncLogged;
+  mainOwned.clickupPendingTime = syncPending;
   saveMainOwned();
 }
 
@@ -850,6 +857,20 @@ async function runSyncQueue() {
   const next = Math.min(...syncQueue.map((x) => x.next));
   if (Number.isFinite(next)) syncTimer = setTimeout(runSyncQueue, Math.max(1000, next - Date.now()));
 }
+
+// Temps en attente de validation : relus par l'interface au démarrage, ils survivent à une relance
+ipcMain.handle('clickup:time-pending', () => syncPending);
+// duration : durée validée en ms, 0 pour ne rien logger
+ipcMain.handle('clickup:time-confirm', (_e, id, duration) => {
+  const p = syncPending.find((x) => x.id === id);
+  if (!p) return false;
+  syncPending = syncPending.filter((x) => x !== p);
+  persistSyncQueue();
+  // La fin du segment ne bouge pas : c'est le début qui suit la durée corrigée
+  if (duration > 0) enqueueSync({ ...p, kind: 'time', start: p.start + p.duration - duration, duration });
+  else syncNotify({ ...p, kind: 'time' }, true, { skipped: true, detail: 'temps non loggé' });
+  return true;
+});
 
 // Bouton « Vérifier » du preset : statuts de la liste d'une carte liée, et noms introuvables
 ipcMain.handle('clickup:check-statuses', async (_e, dir, names) => {
@@ -968,13 +989,32 @@ ipcMain.handle('clickup:assign-me', async (_e, taskId) => {
   }
 });
 
+// Passe le ticket au statut target s'il est dans l'un des statuts allowed (ceux à trier) : un ticket
+// déjà plus loin (dev en cours…) n'est pas ramené en arrière
+ipcMain.handle('clickup:advance', async (_e, taskId, allowed, target) => {
+  const token = clickupToken();
+  if (!token) return { error: 'Ajoute ta clé ClickUp dans les paramètres' };
+  try {
+    const task = await clickupGet(token, `task/${encodeURIComponent(taskId)}`);
+    const current = task.status?.status;
+    if (sameStatus(current, target) || !allowed.some((s) => sameStatus(s, current))) return { ok: true, skipped: true, status: current };
+    const status = await exactStatus(token, task.list?.id, target);
+    await clickupSend(token, 'PUT', `task/${encodeURIComponent(taskId)}`, { status });
+    return { ok: true, status };
+  } catch (e) {
+    return { error: clickupError(e) };
+  }
+});
+
 // Démarrage : config des presets, surveillance, et reprise de la file laissée par la session précédente
 function startClickupSync() {
   const data = loadData();
   syncQueue = Array.isArray(data.clickupQueue) ? data.clickupQueue.map((a) => ({ ...a, next: 0 })) : [];
   syncLogged = Array.isArray(data.clickupLogged) ? data.clickupLogged : [];
+  syncPending = Array.isArray(data.clickupPendingTime) ? data.clickupPendingTime : [];
   mainOwned.clickupQueue = syncQueue;
   mainOwned.clickupLogged = syncLogged;
+  mainOwned.clickupPendingTime = syncPending;
   syncConfigChanged(data.presets);
   if (syncQueue.length) setTimeout(runSyncQueue, 3000);
 }

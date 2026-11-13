@@ -27,8 +27,8 @@ Un développeur qui travaille avec Claude Code jongle avec plusieurs projets (so
 | Relancer les prompts et skills habituels | **Barre de prompt** (vers le terminal actif ou tous), **prompts enregistrés**, **skills** Claude Code listés et lancés via un formulaire avec aperçu. |
 | Séparer pro et perso | **Espaces par compte Claude** : chaque compte a ses projets, onglets, skills et historique. |
 | Suivre les tâches et les relier à Claude | **Kanban par projet** (À faire, En cours, À relire, Fait), tickets **ClickUp** importés par leur numéro, lancement d'un skill sur une carte, mise à jour du tableau par un skill Claude. |
-| Trier les nouveaux tickets | **Inbox ClickUp** : tickets à trier des projets ClickUp choisis dans les paramètres ; « Ignorer » ou « À faire » (assignation dans ClickUp + carte dans le kanban). |
-| Tenir ClickUp à jour sans y penser | **Synchro ClickUp** (par projet, désactivée par défaut) : quand une carte liée passe en « En cours » puis en « À relire », le ticket avance (« dev en cours », puis « revue de code à faire ») et le temps passé en « En cours » est loggé sur le ticket. |
+| Trier les nouveaux tickets | **Inbox ClickUp** : tickets à trier des projets ClickUp choisis dans les paramètres ; « Ignorer » ou « À faire » (assignation et statut « à faire » dans ClickUp + carte dans le kanban). |
+| Tenir ClickUp à jour sans y penser | **Synchro ClickUp** (par projet, désactivée par défaut) : quand une carte liée passe en « En cours » puis en « À relire », le ticket avance (« dev en cours », puis « revue de code à faire ») et le temps passé en « En cours » est proposé dans une fenêtre : on le corrige, puis on l'envoie sur le ticket. |
 | Surveiller sa consommation | **Jauge d'utilisation** du forfait Claude (session de 5 h et semaine). |
 | Préférer une vue « conversation » | **Thème Conversation** : sessions Claude affichées en bulles, actions résumées en cartes, autorisations en boutons. |
 | Rester à jour sans ligne de commande | **Bouton « Mise à jour »** qui apparaît quand le dépôt a avancé, puis reconstruit et relance l'app. |
@@ -38,7 +38,7 @@ Un développeur qui travaille avec Claude Code jongle avec plusieurs projets (so
 1. Le matin, clic sur le projet *jefacture* : Claude s'ouvre à la racine, un shell dans `front`, un `npm run dev` dans `back`, en disposition « 1 + pile ».
 2. `⌘B` ouvre le kanban du projet. « + Ticket » puis `CICD-42` crée la carte à partir du ticket ClickUp (titre, description, priorité, échéance…).
 3. Clic sur la carte → choix du skill `ticket` et du projet → Entrée : une session Claude démarre avec `/ticket CICD-42 (tâche kanban t-…)`.
-4. Le skill fait passer la carte en « En cours », puis « À relire ». Le tableau se met à jour tout seul et fait briller la carte déplacée. Si la synchro est activée sur le projet, le ticket passe en « dev en cours », puis en « revue de code à faire », et les 47 minutes passées en « En cours » sont loggées dans ClickUp.
+4. Le skill fait passer la carte en « En cours », puis « À relire ». Le tableau se met à jour tout seul et fait briller la carte déplacée. Si la synchro est activée sur le projet, le ticket passe en « dev en cours », puis en « revue de code à faire », et une fenêtre propose les 47 minutes passées en « En cours » : tu les corriges si besoin, puis « Envoyer » les logge dans ClickUp.
 5. Pendant ce temps, l'onglet « Modifications » compte les fichiers modifiés (le diff s'ouvre seul si le kanban n'est pas affiché). Quand Claude a fini, le son « Brise » retentit et l'onglet affiche une bulle : c'est à toi.
 6. Le soir, la croix ferme la fenêtre mais garde les sessions vivantes (comme Discord) ; un clic sur l'icône du Dock la rouvre.
 
@@ -117,7 +117,7 @@ docs/CLUTCH.md       Ce document
 | Skills | `skills:scan` |
 | Comptes / utilisation | `account:status`, `usage:get` |
 | Kanban | `kanban:read`, `kanban:write`, `kanban:watch` ; événement `kanban:changed` |
-| ClickUp | `clickup:status`, `clickup:set-token`, `clickup:task`, `clickup:check-statuses`, `clickup:hierarchy`, `clickup:inbox`, `clickup:assign-me` ; événement `clickup:sync` `{ project, taskId, ref, action, ok, error?, detail?, skipped?, queued? }` |
+| ClickUp | `clickup:status`, `clickup:set-token`, `clickup:task`, `clickup:check-statuses`, `clickup:hierarchy`, `clickup:inbox`, `clickup:assign-me`, `clickup:advance`, `clickup:time-pending`, `clickup:time-confirm` ; événement `clickup:time-pending` `{ id, project, taskId, ref, title, start, duration }` ; événement `clickup:sync` `{ project, taskId, ref, action, ok, error?, detail?, skipped?, queued? }` |
 | Apparence / sons | `bg:pick`, `bg:read`, `win:bg`, `sound:system` |
 | Mises à jour | `app:update-status`, `app:rebuild` ; événement `app:rebuild-log` |
 
@@ -211,20 +211,21 @@ Un preset sans synchro reste enregistré sans cette clé, et rien ne change pour
 |---|---|---|
 | `todo → in_progress` | `PUT` vers « dev en cours » seulement si le ticket est « à faire » | `startedAt = maintenant` |
 | `review → in_progress` (ou autre retour en cours) | rien | `startedAt = maintenant` (nouveau segment) |
-| `in_progress → review` | `PUT` vers « revue de code à faire » seulement si le ticket est « à faire » ou « dev en cours » | segment clos ; s'il dure au moins 60 s et que `logTime` est actif : `POST /team/{teamId}/time_entries` `{ tid, start, duration }`, puis `loggedMs += durée` |
+| `in_progress → review` | `PUT` vers « revue de code à faire » seulement si le ticket est « à faire » ou « dev en cours » | segment clos ; s'il dure au moins 60 s et que `logTime` est actif : le temps est mis en attente et proposé à l'utilisateur (voir ci-dessous) |
 | `todo → review`, passage en `done`, retours en arrière | rien | rien |
 
 - Le statut ClickUp est toujours relu (`GET /task/{id}`) juste avant le `PUT` : un ticket n'est jamais reculé, et un ticket déjà plus avancé est laissé tel quel.
 - Noms comparés sans casse, accents ni espaces en trop. Avant le `PUT`, le nom réglé est remplacé par le nom exact du statut dans la liste du ticket (`GET /list/{listId}`, gardé 10 min) : ClickUp refuse un nom qui n'est pas identique (« revue de code à faire » pour « revue de code a faire »). Un statut absent de la liste donne une erreur explicite qui cite les statuts disponibles.
 - L'id natif `clickup.id` est utilisé pour le `PUT` et le temps, jamais `customId`.
 - Aucun commentaire n'est créé dans ClickUp.
+- **Temps à valider** : le temps n'est jamais loggé tout seul. Main garde la proposition dans `clickupPendingTime` (`data.json`) et envoie l'événement `clickup:time-pending` ; l'interface affiche une fenêtre par proposition en bas à droite, au-dessus des notifications, sans prendre le focus (un skill peut déplacer la carte pendant qu'on tape ailleurs). Elle montre la durée arrondie à la minute, modifiable en heures et minutes. « Envoyer » appelle `clickup:time-confirm(id, durée en ms)` : l'entrée part dans la file (`POST /team/{teamId}/time_entries` `{ tid, start, duration }`, puis `loggedMs += durée`), la fin du segment est conservée et le début recalculé à partir de la durée corrigée. « Ne pas logger » appelle `clickup:time-confirm(id, 0)` : rien n'est envoyé. Les propositions sans réponse sont relues au démarrage de l'interface (`clickup:time-pending`) et réaffichées.
 - `timing` est écrit par main (relecture du fichier puis écriture atomique) ; ces écritures ne changent aucun statut et ne déclenchent donc pas de transition. Quand l'interface sauvegarde (`kanban:write`), main reprend sa propre valeur de `timing`, `teamId` et `listId`, pour qu'une sauvegarde faite avant relecture ne les efface pas. Si un skill réécrit la carte sans `timing`, le `startedAt` gardé en mémoire sert de secours.
 
 **Erreurs et reprise** :
 - chaque action (statut ou temps) passe par une file traitée une par une ;
 - réseau coupé, 429 ou erreur 5xx : l'action reste en file, avec de nouvelles tentatives après 30 s, 2 min, 10 min, 30 min puis toutes les heures, et une reprise au démarrage de l'app ;
 - autres erreurs (clé absente ou refusée, ticket introuvable) : l'action est abandonnée et signalée ;
-- la file (`clickupQueue`) et les clés des entrées de temps déjà créées (`clickupLogged`, `taskId:startedAt`, 500 dernières) sont dans `data.json`. Ces clés sont tenues par main : la sauvegarde de l'interface, qui réécrit tout le fichier, les conserve ;
+- la file (`clickupQueue`), les temps en attente de validation (`clickupPendingTime`) et les clés des entrées de temps déjà créées (`clickupLogged`, `taskId:startedAt`, 500 dernières) sont dans `data.json`. Ces clés sont tenues par main : la sauvegarde de l'interface, qui réécrit tout le fichier, les conserve ;
 - idempotence : le statut est relu avant chaque `PUT`, et une entrée de temps dont la clé est déjà connue n'est pas recréée ;
 - chaque résultat (succès, refus, mise en file) est ajouté à `clickup-sync.log` dans le dossier de l'app, sans la clé ;
 - côté interface : un succès donne une notification discrète ; un échec donne une notification visible et un marqueur « non synchronisé » sur la carte, retiré au succès suivant. La carte affiche aussi le temps loggé et un point quand le chrono tourne.
@@ -235,7 +236,7 @@ Un preset sans synchro reste enregistré sans cette clé, et rien ne change pour
 - **Projets suivis** : `clickup:hierarchy` lit `GET /team`, puis par espace de travail `GET /team/{id}/space`, et par espace `GET /space/{id}/folder` et `GET /space/{id}/list` (listes hors dossier). L'arbre est lu une fois par session (⟳ pour le relire). La sélection est dans `data.json`, clé `inbox.sources` : `[{ kind: "space"|"folder"|"list", id, teamId, name }]`. Cocher un parent retire ses enfants de la sélection.
 - **Tickets** : `clickup:inbox` envoie une requête `GET /team/{teamId}/task?space_ids[]|project_ids[]|list_ids[]=…&subtasks=true&order_by=updated` par source, jusqu'à 10 pages de 100 tickets. Il fait une requête par source parce que ClickUp combine ces filtres en ET. Les tickets fermés sont exclus. Les statuts (`inbox.statuses`, par défaut nouveau, à faire, rejeté) sont filtrés côté Clutch, sans tenir compte de la casse ni des accents, car leur nom exact varie d'une liste à l'autre. Sont gardés les tickets qui n'ont personne d'assigné ou qui sont assignés à l'utilisateur de la clé, plus ceux assignés à l'utilisateur dans un statut de `inbox.mineStatuses` (par défaut dev en cours).
 - **Ignorer** : l'id est ajouté à `inbox.dismissed` (2 000 derniers), le ticket ne revient plus.
-- **À faire** : `clickup:assign-me` (`PUT /task/{id}` avec `assignees.add`), puis relecture du ticket et ajout d'une carte `todo` dans `.clutch/kanban.json` du projet choisi en haut du panneau, comme un import par numéro. Les tickets déjà présents sur ce tableau ne sont pas affichés dans l'inbox.
+- **À faire** : `clickup:assign-me` (`PUT /task/{id}` avec `assignees.add`), puis `clickup:advance` (`PUT /task/{id}` avec `status`) qui passe le ticket au statut `clickupSync.todo` du preset de destination (par défaut à faire, nom exact relu dans la liste) s'il est dans un statut de `inbox.statuses` ; un ticket dans un autre statut (dev en cours…) n'est pas modifié, et un échec n'empêche pas l'ajout de la carte. Ensuite relecture du ticket et ajout d'une carte `todo` dans `.clutch/kanban.json` du projet choisi en haut du panneau, comme un import par numéro. Les tickets déjà présents sur ce tableau ne sont pas affichés dans l'inbox.
 - Relecture : à l'ouverture, avec ⟳, et toutes les 5 min quand l'inbox est affichée. Changer d'onglet ou de projet relit seulement le kanban de destination.
 
 #### Utilisation du forfait
