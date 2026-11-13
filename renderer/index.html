@@ -53,7 +53,7 @@
         <div class="tab-actions">
           <button id="btn-side" data-icon="panel-right" title="Panneau de droite : modifications (⌘D), kanban (⌘B), inbox (⌘I), temps"></button>
           <button id="btn-layout" title="Basculer onglets / grille"></button>
-          <button id="btn-settings" data-icon="settings" title="Paramètres : apparence, comptes Claude, ClickUp"></button>
+          <button id="btn-settings" data-icon="settings" title="Paramètres : apparence, fonctionnalités, ClickUp"></button>
           <button id="btn-rebuild" class="hidden" data-icon="restart" title="Mettre à jour Clutch">Mise à jour</button>
         </div>
       </div>
@@ -64,6 +64,7 @@
           <h2>Aucun terminal ouvert</h2>
           <p>Clique sur un projet à gauche, ou <kbd>⌘K</kbd> pour en lancer un.</p>
           <p>Tu peux aussi écrire un prompt ou un <kbd>/skill</kbd> avec <kbd>⌘L</kbd> : je te demanderai sur quel projet le lancer.</p>
+          <p id="empty-features">Kanban, inbox ClickUp, temps, plusieurs comptes Claude : <button type="button" id="btn-features">choisis ce que tu veux dans l'app</button>.</p>
         </div>
       </div>
       <div id="promptbar">
@@ -110,15 +111,19 @@
       </aside>
       <aside id="kanban-panel" class="hidden">
         <div class="diff-head">
-          <div class="diff-title"><select id="kb-project" title="Projet"></select><button id="kb-add-btn" data-icon="plus" title="Ajouter une tâche ou un ticket ClickUp">Ticket</button><span id="kb-stats"></span></div>
+          <div class="diff-title"><button id="kb-add-btn" data-icon="plus" title="Ajouter une tâche ou un ticket ClickUp">Ticket</button><span id="kb-stats"></span></div>
           <div class="diff-tools">
             <button id="kb-wide" data-icon="expand" title="Agrandir le tableau sur la place des terminaux"></button>
-            <button id="kb-settings" data-icon="settings" title="Synchro ClickUp du projet (les colonnes se règlent en cliquant sur leur en-tête)"></button>
+            <button id="kb-settings" data-icon="settings" title="Synchro ClickUp d'un projet (les colonnes se règlent en cliquant sur leur en-tête)"></button>
             <button id="kb-close" data-icon="x" title="Fermer (⌘B)"></button>
           </div>
         </div>
+        <div id="kb-filter" class="hidden" title="N'afficher que les cartes d'un projet"></div>
         <form id="kb-add" class="hidden">
-          <input placeholder="Titre de la tâche, ou ticket ClickUp (#86c0abc12, CICD-123, lien)…" spellcheck="false">
+          <div class="kb-add-row">
+            <input placeholder="Titre de la tâche, ou ticket ClickUp (#86c0abc12, CICD-123, lien)…" spellcheck="false">
+            <label id="kb-add-to" title="Projet où ranger la tâche. Sans choix de ta part, un ticket ClickUp rejoint le projet qui a déjà des cartes de sa liste.">dans<select id="kb-add-project"></select></label>
+          </div>
           <div id="kb-add-msg" class="hidden"></div>
         </form>
         <div id="kb-error" class="hidden"></div>
@@ -126,9 +131,10 @@
       </aside>
       <aside id="inbox-panel" class="hidden">
         <div class="diff-head">
-          <div class="diff-title"><select id="ib-project" title="Kanban où vont les tickets triés (première colonne)"></select><span id="ib-stats"></span></div>
+          <div class="diff-title"><span id="ib-stats"></span></div>
           <div class="diff-tools">
             <button id="ib-reload" data-icon="refresh" title="Recharger depuis ClickUp"></button>
+            <button id="ib-settings" data-icon="settings" title="Listes suivies et statuts à trier"></button>
             <button id="ib-close" data-icon="x" title="Fermer (⌘I)"></button>
           </div>
         </div>
@@ -272,10 +278,16 @@
       <h3>Paramètres</h3>
       <div id="settings-tabs" class="seg">
         <button type="button" data-tab="look">Apparence</button>
+        <button type="button" data-tab="features">Fonctionnalités</button>
         <button type="button" data-tab="accounts">Comptes Claude</button>
         <button type="button" data-tab="clickup">ClickUp</button>
+        <button type="button" data-tab="inbox">Inbox</button>
       </div>
       <div id="theme-pop" class="settings-pane" data-pane="look"></div>
+      <div class="settings-pane settings-sec" data-pane="features">
+        <div class="desc">Coche ce que tu veux voir dans Clutch. Ce qui n'est pas coché disparaît de l'interface ; rien n'est supprimé, tout revient en le recochant.</div>
+        <div id="features-list"></div>
+      </div>
       <div class="settings-pane settings-sec" data-pane="accounts">
         <div class="desc">Chaque compte utilise son propre dossier de configuration (<code>CLAUDE_CONFIG_DIR</code>) : connexion, réglages et historique séparés. Le bouton tout en haut à gauche bascule d'un compte à l'autre : chaque compte a ses propres projets et onglets.</div>
         <div id="account-list"></div>
@@ -288,20 +300,26 @@
       <div class="settings-pane" data-pane="clickup">
       <form id="settings-form" class="settings-sec">
         <div class="settings-head">ClickUp <span id="cu-status"></span></div>
-        <div class="desc">Avec ta clé API, tape un numéro de ticket dans le kanban (<code>#86c0abc12</code>, <code>CICD-123</code> ou un lien ClickUp) : la carte est créée avec le titre, la description, le statut, les personnes assignées, l'échéance et les sous-tâches. Clé à créer dans ClickUp → Paramètres → Apps → API Token (<code>pk_…</code>). Elle est chiffrée dans le trousseau du Mac et reste sur cet ordinateur.</div>
+        <div class="desc">Avec ta clé API, tape un numéro de ticket dans le kanban (<code>#86c0abc12</code>, <code>CICD-123</code> ou un lien ClickUp) : la carte est créée avec le titre, la description, le statut, les personnes assignées, l'échéance et les sous-tâches. L'inbox et les temps s'en servent aussi. Clé à créer dans ClickUp → Paramètres → Apps → API Token (<code>pk_…</code>). Elle est chiffrée dans le trousseau du Mac et reste sur cet ordinateur.</div>
         <div class="row">
           <input id="cu-token" type="password" placeholder="pk_…" spellcheck="false" autocomplete="off">
           <button type="submit" class="primary">Enregistrer</button>
           <button type="button" id="cu-remove" class="danger hidden">Retirer</button>
         </div>
       </form>
-      <div class="settings-sec">
-        <div class="settings-head">Inbox ClickUp <span id="ib-src-count"></span></div>
-        <div class="desc">ClickUp ne partage pas son Inbox par l'API : l'onglet Inbox du panneau de droite liste les tickets ouverts des projets cochés ici, dans l'un des statuts à trier sans personne d'assigné ou assignés à toi, et ceux des statuts où tu es assigné. Cocher un espace ou un dossier inclut tout ce qu'il contient.</div>
-        <label>Statuts à trier (personne d'assigné ou toi)<input id="ib-statuses" placeholder="nouveau, à faire, rejeté" spellcheck="false"></label>
-        <label>Statuts où tu es assigné<input id="ib-mine-statuses" placeholder="dev en cours" spellcheck="false"></label>
-        <div id="ib-tree"></div>
       </div>
+      <div class="settings-pane settings-sec" data-pane="inbox">
+        <div class="desc">L'inbox liste les tickets ouverts des listes suivies, selon leur statut. Chaque choix s'applique tout de suite.</div>
+        <div class="settings-head">Listes suivies <span id="ib-src-count"></span></div>
+        <div id="ib-picked"></div>
+        <input id="ib-search" type="search" placeholder="Chercher un espace, un dossier ou une liste…" spellcheck="false" autocomplete="off">
+        <div id="ib-tree"></div>
+        <div class="settings-head">Statuts à trier <span id="ib-st-count"></span></div>
+        <div id="ib-st"></div>
+        <form id="ib-st-add" class="row">
+          <input placeholder="Ajouter un statut qui n'est pas dans la liste…" spellcheck="false">
+          <button type="submit">Ajouter</button>
+        </form>
       </div>
       <div class="dialog-actions"><button type="button" data-close>Fermer</button></div>
     </div>

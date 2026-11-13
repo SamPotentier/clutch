@@ -59,7 +59,8 @@ async function loadTimes(force) {
 
 // Journée en cours, panneau ouvert ou non : jauge de la barre du haut et pastille de l'onglet
 async function refreshToday(force) {
-  await tmFetch(0, force);
+  // Fonction masquée : ni jauge, ni appel à ClickUp
+  if (feat('times')) await tmFetch(0, force);
   renderToday();
   if (state.times.open && !tm.loading) renderTimes();
 }
@@ -79,7 +80,7 @@ function tmParts(d, entries) {
 function renderToday() {
   const week = tm.weeks.get(tmWeek(0)[0].getTime());
   const el = $('#today');
-  el.classList.toggle('hidden', !week);
+  el.classList.toggle('hidden', !week || !feat('times'));
   if (!week) return void ($('#side-times-count').textContent = '');
   const target = state.times.target * TM_HOUR;
   const p = tmParts(new Date(), week.entries);

@@ -97,9 +97,14 @@ const state = { theme: 'nuit', accounts: [], account: '', defaultName: 'Pro', la
   diff: { open: false, scope: 'session', auto: true, width: 560, collapsed: new Set() },
   bg: { kind: '', color: '#1e2a44', image: '', imageName: '', opacity: 78, blur: 0 },
   sound: { name: 'carillon', volume: 60 },
-  kanban: { open: false, width: 640, presetId: '' }, side: { width: 640 },
-  inbox: { open: false, statuses: ['nouveau', 'à faire', 'rejeté'], mineStatuses: ['dev en cours'], sources: [], dismissed: [] },
-  times: { open: false, target: 7 } };
+  // only : projet auquel le tableau est filtré ; columns : colonnes communes à tous les projets
+  kanban: { open: false, width: 640, only: '', columns: null }, side: { width: 640 },
+  // routes : projet où ranger les tickets de chaque liste ClickUp (id de liste → id de projet)
+  inbox: { open: false, statuses: ['nouveau', 'à faire', 'rejeté'], mineStatuses: ['dev en cours'], sources: [], dismissed: [], routes: {} },
+  times: { open: false, target: 7 },
+  // Fonctions facultatives (kanban, inbox, times, accounts) : masquées tant qu'elles ne sont pas cochées dans les paramètres
+  features: {} };
+const feat = (k) => !!state.features[k];
 const byPty = new Map(); // ptyId -> tab
 
 function persist() {
@@ -108,9 +113,10 @@ function persist() {
     skillConfigs: state.skillConfigs, customSkills: state.customSkills, bg: state.bg, sound: state.sound,
     diff: { scope: state.diff.scope, auto: state.diff.auto },
     side: { width: state.side.width, last: state.side.last },
-    kanban: { open: state.kanban.open, presetId: state.kanban.presetId, lastSkill: state.kanban.lastSkill },
-    inbox: { open: state.inbox.open, statuses: state.inbox.statuses, mineStatuses: state.inbox.mineStatuses, sources: state.inbox.sources, dismissed: state.inbox.dismissed },
+    kanban: { open: state.kanban.open, only: state.kanban.only, columns: state.kanban.columns, lastSkill: state.kanban.lastSkill },
+    inbox: { open: state.inbox.open, statuses: state.inbox.statuses, mineStatuses: state.inbox.mineStatuses, sources: state.inbox.sources, dismissed: state.inbox.dismissed, routes: state.inbox.routes },
     times: { open: state.times.open, target: state.times.target },
+    features: state.features,
   });
 }
 
@@ -240,7 +246,6 @@ function activate(key) {
   renderTabs();
   applyLayout();
   refreshDiff();
-  kanbanFollow(tab);
   updatePromptBar();
   requestAnimationFrame(() => { fitTab(tab); focusTab(tab); });
 }
@@ -756,7 +761,8 @@ $('#account-form').onsubmit = (e) => {
 };
 /* Espaces : un compte à la fois, ses projets, ses onglets et ses skills */
 
-function inSpace(x) { return (x.accountId || '') === state.account; }
+// Sans la fonction « plusieurs comptes », tout est réuni dans un seul espace
+function inSpace(x) { return !feat('accounts') || (x.accountId || '') === state.account; }
 function spaceTabs() { return state.tabs.filter(inSpace); }
 function spacePresets() { return state.presets.filter(inSpace); }
 
@@ -767,7 +773,7 @@ function renderSpaceSwitch() {
     const busy = a.id !== state.account && state.tabs.some((t) => (t.accountId || '') === a.id && (t.bell || t.activity));
     return `<button data-id="${a.id}" class="${a.id === state.account ? 'on' : ''}" title="${esc(a.dir || '~/.claude')}">${esc(a.name)}${busy ? '<span class="space-dot"></span>' : ''}</button>`;
   }).join('') + (state.accounts.length ? '' : `<button data-add title="Ajouter un compte (ex. Perso)">${icon('plus')} Perso</button>`);
-  document.title = state.accounts.length ? `Clutch — ${accountFor(state.account).name}` : 'Clutch';
+  document.title = feat('accounts') && state.accounts.length ? `Clutch — ${accountFor(state.account).name}` : 'Clutch';
 }
 
 function switchSpace(id) {
@@ -790,7 +796,8 @@ function switchSpace(id) {
   scanSkills();
   refreshUsage();
   if (back) activate(back.key);
-  else { refreshDiff(); kanbanFollow(null); }
+  else refreshDiff();
+  kanbanProjectsChanged();
 }
 
 $('#space-switch').addEventListener('click', (e) => {
@@ -810,6 +817,7 @@ function deletePreset(p) {
   state.presets = state.presets.filter((x) => x.id !== p.id);
   persist();
   renderPresets();
+  kanbanProjectsChanged();
 }
 
 let editing = null;
@@ -850,8 +858,8 @@ function openPresetModal(p, tab = 'general') {
   f.cuLogTime.checked = cu.logTime;
   $('#cu-check-result').textContent = '';
   renderCuSync();
-  // Les colonnes se règlent sur le tableau ; ici, un rappel de ce qui est relié
-  $('#cu-cols').textContent = `Colonnes du tableau : ${kbColumns(p).map((c) => `${c.label} → ${c.status || 'aucun statut'}${c.timer ? ' (chrono)' : ''}`).join(' · ')}. Elles se règlent sur le kanban, en cliquant sur l'en-tête d'une colonne.`;
+  // Les colonnes se règlent sur le tableau ; ici, un rappel de ce qui est relié pour ce projet
+  $('#cu-cols').textContent = `Colonnes du tableau : ${kbColumns(p, state.kanban.columns).map((c) => `${c.label} → ${c.status || 'aucun statut'}${c.timer ? ' (chrono)' : ''}`).join(' · ')}. Elles sont communes à tous les projets et se règlent sur le kanban, en cliquant sur l'en-tête d'une colonne ; avec le tableau filtré sur ce projet, le statut réglé ne vaut que pour lui.`;
   $('#modal').classList.remove('hidden');
   if (tab === 'general') f.name.focus();
 }
@@ -941,7 +949,7 @@ function formCuSync(f) {
 $('#btn-cu-check').onclick = async () => {
   const f = $('#preset-form');
   const out = $('#cu-check-result');
-  const names = [...new Set(kbColumns(editing).map((c) => c.status).filter(Boolean))];
+  const names = [...new Set(kbColumns(editing, state.kanban.columns).map((c) => c.status).filter(Boolean))];
   out.className = '';
   out.textContent = 'Vérification…';
   const res = await api.clickupCheckStatuses(f.cwd.value.trim(), names);
@@ -963,9 +971,6 @@ $('#preset-form').onsubmit = (e) => {
   const cu = formCuSync(f);
   // Synchro désactivée et réglages par défaut : rien d'enregistré, le preset reste comme avant
   if (cu.enabled || editing?.clickupSync || Object.keys(CU_SYNC_DEFAULTS).some((k) => k !== 'enabled' && cu[k] !== CU_SYNC_DEFAULTS[k])) data.clickupSync = cu;
-  // Statuts reliés venus de l'ancien réglage (clickupSync.todo…) : rangés avec les colonnes avant qu'il soit remplacé
-  const columns = kbColumns(editing);
-  if (editing?.kanban || JSON.stringify(columns) !== JSON.stringify(kbColumns(null))) data.kanban = { ...editing?.kanban, columns };
   if (editing) Object.assign(editing, data);
   else state.presets.push({ id: uid(), ...data });
   if (data.accountId !== state.account) renderSpaceSwitch();
@@ -974,9 +979,8 @@ $('#preset-form').onsubmit = (e) => {
   renderPresets();
   closeModal();
   scanSkills();
-  // La synchro du projet a pu changer : le tableau affiché en tient compte
-  if (state.kanban.open) loadKanban();
-  if (state.inbox.open) renderInbox();
+  // Le projet, son dossier ou sa synchro ont pu changer : le tableau affiché en tient compte
+  kanbanProjectsChanged();
 };
 $('#btn-cancel').onclick = closeModal;
 $('#btn-browse').onclick = async () => {
@@ -997,6 +1001,7 @@ $('#btn-import').onclick = async () => {
   state.presets.sort((a, b) => a.name.localeCompare(b.name));
   persist();
   renderPresets();
+  kanbanProjectsChanged();
   scanSkills();
 };
 $('#btn-free').onclick = () => openTerminal({ name: 'shell', cwd: '~', command: '' });
@@ -1450,11 +1455,12 @@ function updateSidePanel() {
 const SIDE_TABS = ['diff', 'kanban', 'inbox', 'times'];
 function toggleSide() {
   const cur = SIDE_TABS.find((k) => state[k].open);
-  const k = cur || state.side.last;
-  if (k === 'diff') toggleDiff();
-  else if (k === 'inbox') setInboxOpen(!cur);
+  // Le dernier onglet affiché a pu être masqué depuis : les modifications, toujours là
+  const k = cur || (feat(state.side.last) ? state.side.last : 'diff');
+  if (k === 'inbox') setInboxOpen(!cur);
   else if (k === 'times') setTimesOpen(!cur);
-  else setKanbanOpen(!cur);
+  else if (k === 'kanban') setKanbanOpen(!cur);
+  else toggleDiff();
 }
 $('#btn-side').onclick = toggleSide;
 
@@ -1636,12 +1642,13 @@ function contextMenu(e, items) {
 const KEYS = [
   ['⌘K', 'Lancer un projet, aller à un onglet, changer de thème'], ['⌘J', 'Lancer un skill sur le projet actif'], ['⌘L', 'Écrire un prompt'],
   ['⌘T', 'Nouveau terminal'], ['⌘W', 'Fermer l\'onglet'], ['⌘1-9', 'Aller à un onglet'], ['⌘G', 'Onglets ou grille'],
-  ['⌘D', 'Modifications'], ['⌘B', 'Kanban'], ['⌘I', 'Inbox ClickUp'],
-  ['Kanban', 'Tab pour atteindre une carte, ← → pour la changer de colonne, ↵ pour l\'ouvrir, clic droit pour « Déplacer vers »'],
-  ['Inbox', 'J K pour naviguer, ↵ pour prendre le ticket, E pour l\'ignorer, Espace pour le détail, Z pour annuler'],
+  ['⌘D', 'Modifications'], ['⌘B', 'Kanban', 'kanban'], ['⌘I', 'Inbox ClickUp', 'inbox'],
+  ['Kanban', 'Tab pour atteindre une carte, ← → pour la changer de colonne, ↵ pour l\'ouvrir, clic droit pour la déplacer ou la changer de projet', 'kanban'],
+  ['Inbox', 'J K pour naviguer, ↵ pour prendre le ticket, E pour l\'ignorer, Espace pour le détail, Z pour annuler', 'inbox'],
 ];
+// Le troisième élément est la fonction facultative dont dépend le raccourci
 function openKeys() {
-  $('#keys-list').innerHTML = KEYS.map(([k, what]) => `<dt><kbd>${k}</kbd></dt><dd>${esc(what)}</dd>`).join('');
+  $('#keys-list').innerHTML = KEYS.filter(([, , f]) => !f || feat(f)).map(([k, what]) => `<dt><kbd>${k}</kbd></dt><dd>${esc(what)}</dd>`).join('');
   $('#keys').classList.remove('hidden');
 }
 $('#btn-keys').onclick = openKeys;
@@ -1657,22 +1664,82 @@ async function renderClickupStatus(res) {
   $('#cu-token').placeholder = res.configured ? 'Nouvelle clé pk_… (la clé actuelle est enregistrée)' : 'pk_…';
 }
 
-// Paramètres en trois onglets : apparence (thème, fond, son), comptes Claude, ClickUp
+/* Fonctions facultatives : chacun choisit ce qu'il veut dans l'app (onglet « Fonctionnalités »). Une
+   nouvelle installation commence sans aucune ; ce qui n'est pas coché disparaît de l'interface, sans
+   rien supprimer. */
+const FEATURES = [
+  ['kanban', 'Kanban', 'Un tableau de tâches pour tous les projets, relié à Claude et aux tickets ClickUp (⌘B).'],
+  ['inbox', 'Inbox ClickUp', 'Les tickets à trier des listes ClickUp suivies, à ranger dans le kanban (⌘I). Demande le kanban et une clé ClickUp.'],
+  ['times', 'Temps', 'Les temps loggés dans ClickUp, jour par jour face à l\'objectif, et la jauge du jour dans la barre du haut. Demande une clé ClickUp.'],
+  ['accounts', 'Plusieurs comptes Claude', 'Un espace par compte (pro, perso…), chacun avec ses projets, ses onglets et ses skills.'],
+];
+// Affiche ou masque ce qui dépend des fonctions facultatives
+function applyFeatures() {
+  const side = { kanban: setKanbanOpen, inbox: setInboxOpen, times: setTimesOpen };
+  for (const [k, setOpen] of Object.entries(side)) {
+    $(`#side-tabs [data-side="${k}"]`).classList.toggle('hidden', !feat(k));
+    if (!feat(k) && state[k].open) setOpen(false);
+  }
+  $('#btn-side').title = `Panneau de droite : modifications (⌘D)${feat('kanban') ? ', kanban (⌘B)' : ''}${feat('inbox') ? ', inbox (⌘I)' : ''}${feat('times') ? ', temps' : ''}`;
+  $('#settings-tabs [data-tab="accounts"]').classList.toggle('hidden', !feat('accounts'));
+  // La clé ClickUp sert au kanban, à l'inbox et aux temps
+  $('#settings-tabs [data-tab="clickup"]').classList.toggle('hidden', !feat('kanban') && !feat('inbox') && !feat('times'));
+  $('#settings-tabs [data-tab="inbox"]').classList.toggle('hidden', !feat('inbox'));
+  $('#preset-tabs [data-tab="clickup"]').classList.toggle('hidden', !feat('kanban'));
+  $('#preset-account').closest('label').classList.toggle('hidden', !feat('accounts'));
+  $('#space-switch').classList.toggle('hidden', !feat('accounts'));
+  $('#empty-features').classList.toggle('hidden', FEATURES.some(([k]) => feat(k)));
+}
+
+function setFeature(k, on) {
+  state.features[k] = on;
+  // L'inbox range ses tickets dans le kanban : elle ne va pas sans lui
+  if (k === 'inbox' && on) state.features.kanban = true;
+  if (k === 'kanban' && !on) state.features.inbox = false;
+  persist();
+  applyFeatures();
+  if (k === 'accounts') {
+    // Sans les comptes, les projets et les onglets de tous les espaces sont réunis
+    if (!on && state.account) switchSpace('');
+    for (const t of state.tabs) t.wrap.classList.toggle('away', !inSpace(t));
+    renderSpaceSwitch();
+    renderPresets();
+    renderTabs();
+    applyLayout();
+    scanSkills();
+  }
+  if (k === 'times') refreshToday();
+  renderFeatures();
+  $(`#features-list [data-feat="${k}"]`).focus();
+}
+
+function renderFeatures() {
+  $('#features-list').innerHTML = FEATURES.map(([k, name, desc]) => `<label class="feature"><input type="checkbox" data-feat="${k}"${feat(k) ? ' checked' : ''}><span><b>${name}</b><small>${esc(desc)}</small></span></label>`).join('');
+}
+$('#features-list').addEventListener('change', (e) => {
+  if (e.target.dataset?.feat) setFeature(e.target.dataset.feat, e.target.checked);
+});
+$('#btn-features').onclick = () => openSettings('features');
+
+// Paramètres en onglets : apparence (thème, fond, son), fonctionnalités, comptes Claude, ClickUp, inbox
 let settingsTab = 'look';
 function showSettingsTab(tab) {
+  // Onglet d'une fonction masquée depuis : on revient au premier
+  if ($(`#settings-tabs [data-tab="${tab}"]`)?.classList.contains('hidden') !== false) tab = 'look';
   settingsTab = tab;
   document.querySelectorAll('#settings-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   document.querySelectorAll('#settings .settings-pane').forEach((p) => p.classList.toggle('hidden', p.dataset.pane !== tab));
   if (tab === 'look') renderThemePop();
+  else if (tab === 'features') renderFeatures();
   else if (tab === 'accounts') {
     renderAccounts();
     $('#account-form').name.focus();
-  } else {
+  } else if (tab === 'inbox') openInboxSettings();
+  else {
     $('#cu-token').value = '';
     $('#cu-status').textContent = '…';
     $('#cu-token').focus();
     renderClickupStatus();
-    openInboxSettings();
   }
 }
 // Sans onglet précisé, le dernier affiché
@@ -1975,8 +2042,8 @@ function renderPalette() {
     ...skillItems,
     ...(activeTab() ? [{ kind: 'Action', label: 'Renommer l’onglet…', sub: activeTab().title, color: 'transparent', run: () => setTimeout(() => startRename(activeTab()), 50) }] : []),
     { kind: 'Action', label: 'Nouveau projet…', sub: '', color: 'transparent', run: () => openPresetModal() },
-    { kind: 'Action', label: 'Comptes Claude…', sub: 'pro, perso…', color: 'transparent', run: () => openAccounts() },
-    ...allAccounts().filter((a) => a.id !== state.account).map((a) => ({ kind: 'Compte', label: `Passer sur ${a.name}`, sub: a.dir || '~/.claude', color: 'var(--accent)', run: () => switchSpace(a.id) })),
+    ...(feat('accounts') ? [{ kind: 'Action', label: 'Comptes Claude…', sub: 'pro, perso…', color: 'transparent', run: () => openAccounts() }] : []),
+    ...allAccounts().filter((a) => feat('accounts') && a.id !== state.account).map((a) => ({ kind: 'Compte', label: `Passer sur ${a.name}`, sub: a.dir || '~/.claude', color: 'var(--accent)', run: () => switchSpace(a.id) })),
     ...Object.entries(THEMES).map(([key, th]) => ({ kind: 'Thème', label: `Thème : ${th.label}`, sub: th.desc, color: th.swatches[2], run: () => { applyTheme(key); persist(); } })),
   ]).filter((it) => !q || fuzzy(q, `${it.label} ${it.sub}`));
   paletteSel = Math.min(paletteSel, Math.max(paletteItems.length - 1, 0));
@@ -2029,8 +2096,8 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'n') openPresetModal();
   else if (k === 'g') $('#btn-layout').click();
   else if (k === 'd') toggleDiff();
-  else if (k === 'b') toggleKanban();
-  else if (k === 'i') toggleInbox();
+  else if (k === 'b' && feat('kanban')) toggleKanban();
+  else if (k === 'i' && feat('inbox')) toggleInbox();
   // e.code (touche physique) : en AZERTY, ⌘ + la touche 1 donne « & » dans e.key
   else if (/^Digit[1-9]$/.test(e.code) && !e.shiftKey) { const t = spaceTabs()[+e.code.slice(5) - 1]; if (t) activate(t.key); }
   else if (e.shiftKey && (k === ']' || k === '}' || k === '[' || k === '{')) {
@@ -2154,7 +2221,9 @@ api.onRebuildLog((text) => {
   state.chatMode = data.chatMode || 'acceptEdits';
   state.accounts = data.accounts || [];
   state.defaultName = data.defaultName || 'Pro';
-  state.account = state.accounts.some((a) => a.id === data.account) ? data.account : '';
+  // Une installation d'avant ce choix garde ce qu'elle affichait ; une nouvelle commence sans rien de facultatif
+  state.features = data.features || (data.presets?.length ? { kanban: true, inbox: true, times: true, accounts: !!data.accounts?.length } : {});
+  state.account = feat('accounts') && state.accounts.some((a) => a.id === data.account) ? data.account : '';
   Object.assign(state.bg, data.bg || {});
   Object.assign(state.sound, data.sound || {});
   Object.assign(state.kanban, data.kanban || {});
@@ -2174,6 +2243,7 @@ api.onRebuildLog((text) => {
   applyLayout();
   window.addEventListener('resize', () => state.tabs.forEach(fitTab));
   refreshUsage(true);
+  applyFeatures();
   initKanban();
   initInbox();
   initTimes();

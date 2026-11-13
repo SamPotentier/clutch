@@ -433,7 +433,7 @@ function createPty({ cwd, cols, rows, command, configDir }) {
 ipcMain.handle('data:load', () => loadData());
 ipcMain.handle('data:save', (_e, data) => {
   saveData(data);
-  syncConfigChanged(data.presets);
+  syncConfigChanged(data.presets, data.kanban?.columns);
 });
 ipcMain.handle('dialog:folder', async () => {
   const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
@@ -508,7 +508,7 @@ ipcMain.handle('kanban:write', (_e, dir, tasks) => {
 });
 
 // Surveillance par sondage : fonctionne même si le fichier n'existe pas encore ou est remplacé d'un bloc.
-// Un fichier est surveillé pour l'interface (projet affiché) et/ou pour la synchro ClickUp (presets activés).
+// Un fichier est surveillé pour l'interface (projets du tableau) et/ou pour la synchro ClickUp (presets activés).
 const kanbanWatches = new Map(); // fichier -> { dir, uiDir, sync }
 function setKanbanWatch(dir, role, on) {
   const file = kanbanFile(dir);
@@ -533,11 +533,13 @@ function kanbanFileChanged(file) {
   if (!res.error) kanbanSnapshot(w.dir, res.tasks);
   if (w.uiDir && win && !win.isDestroyed()) win.webContents.send('kanban:changed', w.uiDir);
 }
-let kanbanUiDir = null;
-ipcMain.on('kanban:watch', (_e, dir) => {
-  if (kanbanUiDir) setKanbanWatch(kanbanUiDir, 'ui', false);
-  kanbanUiDir = dir || null;
-  if (kanbanUiDir) setKanbanWatch(kanbanUiDir, 'ui', true);
+// Le tableau réunit tous les projets : l'interface donne la liste des dossiers à surveiller
+let kanbanUiDirs = [];
+ipcMain.on('kanban:watch', (_e, dirs) => {
+  dirs = Array.isArray(dirs) ? dirs : [];
+  for (const dir of kanbanUiDirs) if (!dirs.includes(dir)) setKanbanWatch(dir, 'ui', false);
+  for (const dir of dirs) setKanbanWatch(dir, 'ui', true);
+  kanbanUiDirs = dirs;
 });
 /* ---------- ClickUp ---------- */
 // La clé API est chiffrée avec le trousseau macOS (safeStorage) et ne repasse jamais par l'interface.
@@ -588,6 +590,9 @@ ipcMain.handle('clickup:status', async () => {
 ipcMain.handle('clickup:set-token', async (_e, token) => {
   const secrets = readSecrets();
   clickupTeams = null;
+  // Autre clé, autre compte : rien de ce qui a été lu avec l'ancienne ne vaut encore
+  inboxCache = null;
+  try { fs.unlinkSync(hierarchyFile()); } catch {}
   token = String(token || '').trim();
   if (!token) {
     delete secrets.clickup;
@@ -668,19 +673,18 @@ ipcMain.handle('clickup:task', (_e, ref) => clickupTask(ref));
 // les colonnes chronométrées (envoyé seulement après validation dans l'interface). Jamais de recul,
 // jamais de commentaire.
 
-// Colonnes du projet et rangement des statuts : mêmes règles que l'interface
+// Colonnes du tableau et rangement des statuts : mêmes règles que l'interface
 const { kbColumns, kbStatus } = require('./renderer/kanban-cols.js');
 const SYNC_DEFAULTS = { enabled: false, logTime: true };
 const SYNC_MIN_MS = 60 * 1000;
 const SYNC_BACKOFF = [30, 120, 600, 1800, 3600].map((s) => s * 1000);
 // Noms de statuts ClickUp comparés sans casse, accents ni espaces en trop
-const sameStatus = (a, b) => {
-  const n = (x) => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
-  return n(a) === n(b);
-};
+const statusKey = (x) => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const sameStatus = (a, b) => statusKey(a) === statusKey(b);
 const projectKey = (dir) => path.resolve(expandHome(dir));
 
 let syncPresets = [];
+let syncColumns = null; // colonnes communes à tous les projets (kanban.columns de data.json)
 const syncTables = new Map(); // projet -> Map(id de tâche -> statut lu en dernier)
 let syncQueue = [];
 let syncLogged = []; // clés « taskId:startedAt » des entrées de temps déjà créées
@@ -692,12 +696,13 @@ let syncRunning = false;
 function syncConfig(dir) {
   const key = projectKey(dir);
   const p = syncPresets.find((x) => x.clickupSync?.enabled && x.cwd && projectKey(x.cwd) === key);
-  return p ? { ...SYNC_DEFAULTS, ...p.clickupSync, cwd: p.cwd, columns: kbColumns(p) } : null;
+  return p ? { ...SYNC_DEFAULTS, ...p.clickupSync, cwd: p.cwd, columns: kbColumns(p, syncColumns) } : null;
 }
 
-// Les presets ont changé : on surveille le kanban de chaque projet synchronisé, panneau ouvert ou non
-function syncConfigChanged(presets) {
+// Les presets ou les colonnes ont changé : on surveille le kanban de chaque projet synchronisé, panneau ouvert ou non
+function syncConfigChanged(presets, columns) {
   syncPresets = Array.isArray(presets) ? presets : [];
+  syncColumns = columns;
   const wanted = new Set(syncPresets.filter((p) => p.clickupSync?.enabled && p.cwd).map((p) => kanbanFile(p.cwd)));
   for (const [file, w] of kanbanWatches) if (w.sync && !wanted.has(file)) setKanbanWatch(w.dir, 'sync', false);
   for (const p of syncPresets) {
@@ -713,7 +718,7 @@ function syncConfigChanged(presets) {
 // La table est mise à jour avant tout appel réseau : une relecture de la même écriture (watchFile)
 // ne voit plus de différence, une transition ne part donc qu'une fois.
 // Les statuts sont gardés tels qu'écrits et rangés en colonnes au moment de comparer : modifier les
-// colonnes du projet ne crée pas de transition.
+// colonnes du tableau ne crée pas de transition.
 function kanbanSnapshot(dir, tasks) {
   const key = projectKey(dir);
   const prev = syncTables.get(key);
@@ -963,14 +968,20 @@ async function clickupUserId(token) {
   return clickupMe.id;
 }
 
-// Arborescence à cocher dans les paramètres : espaces › dossiers › listes, par espace de travail
-ipcMain.handle('clickup:hierarchy', async () => {
+// Arborescence à cocher dans les paramètres : espaces › dossiers › listes, par espace de travail.
+// Elle change rarement et demande plusieurs requêtes par espace : la dernière lue est gardée dans un
+// fichier, que l'interface affiche tout de suite (cached) avant de la relire.
+const hierarchyFile = () => path.join(app.getPath('userData'), 'clickup-hierarchy.json');
+ipcMain.handle('clickup:hierarchy', async (_e, cached) => {
+  if (cached) {
+    try { return JSON.parse(fs.readFileSync(hierarchyFile(), 'utf8')); } catch { return null; }
+  }
   const token = clickupToken();
   if (!token) return { error: 'Ajoute ta clé ClickUp dans les paramètres' };
   try {
     const { teams } = await clickupGet(token, 'team');
     const lists = (ls) => (ls || []).map((l) => ({ id: l.id, name: l.name }));
-    return {
+    const res = {
       teams: await Promise.all(teams.map(async (team) => {
         const { spaces } = await clickupGet(token, `team/${team.id}/space?archived=false`);
         return {
@@ -985,56 +996,79 @@ ipcMain.handle('clickup:hierarchy', async () => {
         };
       })),
     };
+    try { fs.writeFileSync(hierarchyFile(), JSON.stringify(res)); } catch {}
+    return res;
   } catch (e) {
     return { error: clickupError(e) };
   }
 });
 
 const INBOX_MAX_PAGES = 10;
+const INBOX_CACHE_MS = 5 * 60 * 1000;
 const INBOX_PARAM = { space: 'space_ids[]', folder: 'project_ids[]', list: 'list_ids[]' };
 
 // sources : [{ kind: 'space' | 'folder' | 'list', id, teamId }] ; statuses : à trier (personne ou moi),
 // mineStatuses : gardés seulement s'ils me sont assignés (dev en cours…). Noms comparés sans accents.
-ipcMain.handle('clickup:inbox', async (_e, sources, statuses, mineStatuses = []) => {
+// Les tickets ouverts des sources sont gardés 5 min, tous statuts confondus : changer les statuts à trier
+// refiltre sans réinterroger ClickUp (fresh force la relecture). La réponse donne aussi les statuts
+// rencontrés, avec le nombre de tickets que chacun ferait apparaître, pour les proposer dans les réglages.
+let inboxCache = null; // { key, at, tasks, truncated }
+ipcMain.handle('clickup:inbox', async (_e, sources, statuses, mineStatuses = [], fresh = false) => {
   const token = clickupToken();
   if (!token) return { error: 'Ajoute ta clé ClickUp dans les paramètres' };
   try {
-    const me = await clickupUserId(token);
-    const found = new Map();
-    let truncated = false;
-    // Une requête par source : les filtres d'espace, de dossier et de liste se cumulent (ET) chez ClickUp
-    await Promise.all(sources.filter((s) => INBOX_PARAM[s.kind] && s.teamId).map(async (s) => {
-      for (let page = 0; page < INBOX_MAX_PAGES; page++) {
-        const q = new URLSearchParams({ page, subtasks: 'true', include_closed: 'false', order_by: 'updated' });
-        q.append(INBOX_PARAM[s.kind], s.id);
-        const res = await clickupGet(token, `team/${encodeURIComponent(s.teamId)}/task?${q}`);
-        // Les statuts ne sont pas filtrés côté ClickUp : leur nom exact varie d'une liste à l'autre
-        for (const t of res.tasks || []) {
-          const mine = (t.assignees || []).some((a) => a.id === me);
-          const is = (names) => names.some((x) => sameStatus(x, t.status?.status));
-          if (!(is(statuses) && (mine || !t.assignees?.length)) && !(mine && is(mineStatuses))) continue;
-          found.set(t.id, {
-            id: t.id,
-            customId: t.custom_id || undefined,
-            name: t.name,
-            url: t.url,
-            status: t.status?.status,
-            statusColor: t.status?.color,
-            priority: t.priority?.priority,
-            mine,
-            list: t.list?.name,
-            folder: t.folder?.hidden ? undefined : t.folder?.name,
-            space: t.space?.id,
-            created: +t.date_created || 0,
-            updated: +t.date_updated || 0,
-            creator: t.creator?.username,
-          });
+    const key = JSON.stringify(sources.map((s) => [s.kind, s.id, s.teamId]));
+    if (fresh || inboxCache?.key !== key || Date.now() - inboxCache.at > INBOX_CACHE_MS) {
+      const me = await clickupUserId(token);
+      const found = new Map();
+      let truncated = false;
+      // Une requête par source : les filtres d'espace, de dossier et de liste se cumulent (ET) chez ClickUp
+      await Promise.all(sources.filter((s) => INBOX_PARAM[s.kind] && s.teamId).map(async (s) => {
+        for (let page = 0; page < INBOX_MAX_PAGES; page++) {
+          const q = new URLSearchParams({ page, subtasks: 'true', include_closed: 'false', order_by: 'updated' });
+          q.append(INBOX_PARAM[s.kind], s.id);
+          const res = await clickupGet(token, `team/${encodeURIComponent(s.teamId)}/task?${q}`);
+          for (const t of res.tasks || []) {
+            found.set(t.id, {
+              id: t.id,
+              customId: t.custom_id || undefined,
+              name: t.name,
+              url: t.url,
+              status: t.status?.status,
+              statusColor: t.status?.color,
+              priority: t.priority?.priority,
+              mine: (t.assignees || []).some((a) => a.id === me),
+              free: !t.assignees?.length,
+              list: t.list?.name,
+              listId: t.list?.id,
+              folder: t.folder?.hidden ? undefined : t.folder?.name,
+              space: t.space?.id,
+              created: +t.date_created || 0,
+              updated: +t.date_updated || 0,
+              creator: t.creator?.username,
+            });
+          }
+          if (res.last_page !== false || (res.tasks || []).length < 100) return;
         }
-        if (res.last_page !== false || (res.tasks || []).length < 100) return;
-      }
-      truncated = true;
-    }));
-    return { items: [...found.values()].sort((a, b) => b.updated - a.updated), truncated };
+        truncated = true;
+      }));
+      inboxCache = { key, at: Date.now(), tasks: [...found.values()].sort((a, b) => b.updated - a.updated), truncated };
+    }
+    const { tasks, truncated, at } = inboxCache;
+    // Les statuts ne sont pas filtrés côté ClickUp : leur nom exact varie d'une liste à l'autre
+    const is = (names, t) => names.some((x) => sameStatus(x, t.status));
+    const seen = new Map();
+    for (const t of tasks) {
+      if (!t.status) continue;
+      const st = seen.get(statusKey(t.status)) || { name: t.status, color: t.statusColor, open: 0, mine: 0 };
+      if (t.mine || t.free) st.open++;
+      if (t.mine) st.mine++;
+      seen.set(statusKey(t.status), st);
+    }
+    return {
+      items: tasks.filter((t) => (is(statuses, t) && (t.mine || t.free)) || (t.mine && is(mineStatuses, t))).map(({ free, ...t }) => t),
+      statuses: [...seen.values()], truncated, at,
+    };
   } catch (e) {
     return { error: clickupError(e) };
   }
@@ -1106,7 +1140,7 @@ function localTimes() {
   for (const p of syncPresets) {
     if (!p.clickupSync?.enabled || !p.cwd || seen.has(projectKey(p.cwd))) continue;
     seen.add(projectKey(p.cwd));
-    const cols = kbColumns(p);
+    const cols = kbColumns(p, syncColumns);
     for (const t of readKanban(p.cwd).tasks) {
       if (!t?.clickup?.id || !t.timing?.startedAt || !cols.find((c) => c.id === kbStatus(t.status, cols))?.timer) continue;
       running.push({ project: p.name, taskId: String(t.id), clickupId: t.clickup.id, ref: t.clickup.customId || t.clickup.id, name: t.title, start: Date.parse(t.timing.startedAt) });
@@ -1124,7 +1158,7 @@ function startClickupSync() {
   mainOwned.clickupQueue = syncQueue;
   mainOwned.clickupLogged = syncLogged;
   mainOwned.clickupPendingTime = syncPending;
-  syncConfigChanged(data.presets);
+  syncConfigChanged(data.presets, data.kanban?.columns);
   if (syncQueue.length) setTimeout(runSyncQueue, 3000);
 }
 // Mises à jour : l'app installée connaît son dossier de sources et le commit dont elle est issue (source.json).
