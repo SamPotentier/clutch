@@ -23,10 +23,11 @@ Un développeur qui travaille avec Claude Code jongle avec plusieurs projets (so
 | Ouvrir un projet en un clic | **Projets (presets)** : dossier, couleur, compte Claude et la liste des terminaux à ouvrir (racine, `front`, `back`, Claude, shell ou commande comme `npm run dev`), avec leur disposition. |
 | Voir plusieurs terminaux à la fois | **Onglets ou grille** : côte à côte, empilés, grille, « 1 + pile », « 1 + rangée ». Séparations redimensionnables, terminaux déplaçables par glisser-déposer, passage grille ↔ onglets. |
 | Savoir où en est Claude | **Indicateurs d'état** sur les onglets, les en-têtes et la liste des projets : rond qui tourne quand Claude travaille, bulle qui pulse quand il attend une réponse. **Son de fin** au choix (sons synthétisés ou sons du Mac, dont « Brise »). |
-| Voir ce que Claude a changé | Onglet **Modifications** du panneau de droite (partagé avec le kanban et l'inbox, un seul visible à la fois), en direct, depuis l'ouverture de l'onglet ou depuis le dernier commit. |
+| Voir ce que Claude a changé | Onglet **Modifications** du panneau de droite (partagé avec le kanban, l'inbox et les temps, un seul visible à la fois ; un bouton en haut à droite l'ouvre et le ferme sur le dernier onglet affiché, `side.last` dans `data.json`), en direct, depuis l'ouverture de l'onglet ou depuis le dernier commit. |
 | Relancer les prompts et skills habituels | **Barre de prompt** (vers le terminal actif ou tous), **prompts enregistrés**, **skills** Claude Code listés et lancés via un formulaire avec aperçu. |
 | Séparer pro et perso | **Espaces par compte Claude** : chaque compte a ses projets, onglets, skills et historique. |
 | Suivre les tâches et les relier à Claude | **Kanban par projet** (colonnes réglables, par défaut À faire, En cours, À relire), tickets **ClickUp** importés par leur numéro, lancement d'un skill sur une carte, mise à jour du tableau par un skill Claude. |
+| Vérifier ses heures | Onglet **Temps** : temps loggés dans ClickUp par jour et par ticket, face à l'objectif quotidien (7 h par défaut). |
 | Trier les nouveaux tickets | **Inbox ClickUp** : tickets à trier des projets ClickUp choisis dans les paramètres ; « Ignorer » ou « À faire » (assignation et statut de la première colonne dans ClickUp + carte dans le kanban). |
 | Tenir ClickUp à jour sans y penser | **Synchro ClickUp** (par projet, désactivée par défaut) : quand une carte liée passe en « En cours » puis en « À relire », le ticket avance (« dev en cours », puis « revue de code à faire ») et le temps passé en « En cours » est proposé dans une fenêtre : on le corrige, puis on l'envoie sur le ticket. |
 | Surveiller sa consommation | **Jauge d'utilisation** du forfait Claude (session de 5 h et semaine). |
@@ -80,6 +81,7 @@ renderer/
   kanban-cols.js     Colonnes du kanban et rangement des statuts (chargé aussi par main.js)
   kanban.js          Tableau des tâches, glisser-déposer, import ClickUp
   inbox.js           Inbox ClickUp reconstituée : tri des tickets, choix des projets suivis
+  times.js           Temps loggés dans ClickUp, par jour, face à l'objectif quotidien
   icons.js           Pictogrammes SVG au trait (style Lucide)
   styles.css         Thèmes par variables CSS, mises en page, composants
 build/
@@ -118,7 +120,7 @@ docs/CLUTCH.md       Ce document
 | Skills | `skills:scan` |
 | Comptes / utilisation | `account:status`, `usage:get` |
 | Kanban | `kanban:read`, `kanban:write`, `kanban:watch` ; événement `kanban:changed` |
-| ClickUp | `clickup:status`, `clickup:set-token`, `clickup:task`, `clickup:check-statuses`, `clickup:hierarchy`, `clickup:inbox`, `clickup:assign-me`, `clickup:advance`, `clickup:time-pending`, `clickup:time-confirm` ; événement `clickup:time-pending` `{ id, project, taskId, ref, title, start, duration }` ; événement `clickup:sync` `{ project, taskId, ref, action, ok, error?, detail?, status?, skipped?, queued? }` |
+| ClickUp | `clickup:status`, `clickup:set-token`, `clickup:task`, `clickup:check-statuses`, `clickup:hierarchy`, `clickup:inbox`, `clickup:assign-me`, `clickup:advance`, `clickup:align`, `clickup:times`, `clickup:time-pending`, `clickup:time-confirm` ; événement `clickup:time-pending` `{ id, project, taskId, ref, title, start, duration }` ; événement `clickup:sync` `{ project, taskId, ref, action, ok, error?, detail?, status?, skipped?, queued? }` |
 | Apparence / sons | `bg:pick`, `bg:read`, `win:bg`, `sound:system` |
 | Mises à jour | `app:update-status`, `app:rebuild` ; événement `app:rebuild-log` |
 
@@ -177,7 +179,7 @@ docs/CLUTCH.md       Ce document
 - `clickup.teamId` et `clickup.listId` sont stockés à l'import ; pour une carte plus ancienne, ils sont récupérés à la première synchro et sauvegardés. `timing` n'existe que pour les cartes synchronisées ; il est écrit uniquement par le processus principal.
 - **Écriture** : fichier temporaire puis `rename`, pour qu'un lecteur ne voie jamais un fichier à moitié écrit.
 - **Lecture en direct** : `fs.watchFile`, qui vérifie le fichier toutes les 700 ms. Ce mode fonctionne même si le fichier n'existe pas encore ou s'il est remplacé d'un bloc, comme le fait l'outil d'écriture de Claude.
-- **Colonnes** : réglées par preset (`data.json`, formulaire du preset ou ⚙ du tableau), dans l'ordre d'affichage :
+- **Colonnes** : réglées par projet, sur le tableau (clic sur l'en-tête d'une colonne, « + » en bout de tableau ; `kbColAction`, `kbSetCols`), et enregistrées dans le preset (`data.json`), dans l'ordre d'affichage :
   ```json
   "kanban": { "columns": [ { "id": "todo", "label": "À faire", "status": "à faire", "timer": false },
                            { "id": "in_progress", "label": "En cours", "status": "dev en cours", "timer": true },
@@ -185,10 +187,12 @@ docs/CLUTCH.md       Ce document
   ```
   `id` est la valeur de `status` dans `kanban.json` ; il est tiré du nom à la création de la colonne (`kbNewColId` : « En test » donne `en_test`, « Fait » donne `done`) et ne change plus quand on la renomme. `status` est le statut ClickUp relié (facultatif), `timer` marque les colonnes dont le temps est compté. Un preset sans cette clé a les trois colonnes ci-dessus, avec les statuts de l'ancien réglage `clickupSync.todo|inProgress|review` s'il existe. `renderer/kanban-cols.js` porte ces règles (`kbColumns`, `kbStatus`) ; il est chargé par l'interface et par `main.js`, pour que les deux rangent une tâche dans la même colonne.
 - **Tolérance** : un statut est rangé dans la colonne dont il donne l'id ou le nom, sinon par ses variantes courantes (`doing`, `to review`, `en cours`, `fait`…), sinon dans la première colonne. Une tâche en `done` n'a pas de colonne, sauf si le projet en a une avec cet id : elle reste dans le fichier sans être affichée. Les cartes d'une colonne supprimée vont dans la première. Une tâche sans `id` ou sans `title` est ignorée. Les champs inconnus sont conservés.
-- **JSON invalide** : le tableau passe en lecture seule, affiche l'erreur et n'écrase rien.
+- **JSON invalide** : le tableau passe en lecture seule et n'écrase rien. Le bandeau dit ce qui est cassé et où (`kanban:read` renvoie `line`, retrouvée dans le message d'analyse), propose de demander la réparation à Claude, et garde le message technique sous « Détail ».
 - Les cartes changées depuis l'extérieur sont repérées en comparant les statuts avec la lecture précédente, puis mises en évidence 2 s.
 - Une saisie en cours (nouvelle tâche, modification) survit aux rafraîchissements.
-- **Lancement depuis une carte** : la fenêtre des skills s'ouvre en deux colonnes, le détail de la tâche à gauche (`kbTicketInfo` : tout ce que la carte garde du ticket, description rendue en Markdown) et à droite le formulaire, avec un choix de skill en plus (dont « Juste la tâche »). Le détail vient du fichier, pas d'un appel à ClickUp : ⟳ sur la carte le met à jour. La tâche remplit le champ `arguments`, `tache`, `ticket`… avec son identifiant, `(tâche kanban t-…)`, pour que le skill retrouve la carte.
+- **Lancement depuis une carte** : la fenêtre des skills affiche d'abord la fiche de la tâche (`kbTicketInfo` : tout ce que la carte garde du ticket, description rendue en Markdown), puis le choix du skill (dont « Juste la tâche ») et une ligne de résumé ; le projet, la cible et le prompt sont repliés tant qu'aucun champ obligatoire n'est vide. La fiche vient du fichier, pas d'un appel à ClickUp : ⟳ sur la carte la met à jour. La tâche remplit le champ `arguments`, `tache`, `ticket`… avec son identifiant, `(tâche kanban t-…)`, pour que le skill retrouve la carte.
+- **Carte** : statut ClickUp en pastille, priorité haute ou urgente, échéance datée, initiales, chrono en cours (colonne chronométrée) et temps loggé. Atteignable au clavier (`tabindex`), ← → la changent de colonne, ↵ l'ouvre, clic droit pour « Déplacer vers ».
+- **Écart avec ClickUp** (`kbDiverges`) : projet synchronisé, colonne reliée à un statut et `clickup.status` différent. La pastille devient « ≠ statut » ; « Passer le ticket en … » appelle `clickup:align` (action de statut forcée, y compris en arrière), « Laisser » note l'écart vu dans `ack` sur la carte.
 
 #### ClickUp
 
@@ -201,7 +205,7 @@ docs/CLUTCH.md       Ce document
 
 Faite par le processus principal, jamais par les skills : elle se déclenche quelle que soit l'origine du changement (interface, glisser-déposer, skill Claude qui réécrit le fichier).
 
-**Réglages par preset** (`data.json`, formulaire du preset) :
+**Réglages par preset** (`data.json`, onglet ClickUp du formulaire du projet) :
 ```json
 "clickupSync": { "enabled": false, "logTime": true }
 ```
@@ -235,6 +239,7 @@ Avec les colonnes par défaut : `todo → in_progress` passe le ticket de « à 
 - `timing` est écrit par main (relecture du fichier puis écriture atomique) ; ces écritures ne changent aucun statut et ne déclenchent donc pas de transition. Quand l'interface sauvegarde (`kanban:write`), main reprend sa propre valeur de `timing`, `teamId` et `listId`, pour qu'une sauvegarde faite avant relecture ne les efface pas. Si un skill réécrit la carte sans `timing`, le `startedAt` gardé en mémoire sert de secours.
 
 **Erreurs et reprise** :
+- les erreurs ClickUp passent par `clickupError` : connexion coupée, clé refusée, accès refusé, élément introuvable, limite de requêtes et erreur serveur ont chacune un message qui dit quoi faire ; les erreurs levées par Clutch (statut absent de la liste…) gardent leur texte ;
 - chaque action (statut ou temps) passe par une file traitée une par une ;
 - réseau coupé, 429 ou erreur 5xx : l'action reste en file, avec de nouvelles tentatives après 30 s, 2 min, 10 min, 30 min puis toutes les heures, et une reprise au démarrage de l'app ;
 - autres erreurs (clé absente ou refusée, ticket introuvable) : l'action est abandonnée et signalée ;
@@ -248,10 +253,18 @@ Avec les colonnes par défaut : `todo → in_progress` passe le ticket de « à 
 - ClickUp n'expose pas son Inbox (notifications) dans l'API publique : Clutch la reconstitue à partir des projets ClickUp choisis dans les paramètres.
 - **Projets suivis** : `clickup:hierarchy` lit `GET /team`, puis par espace de travail `GET /team/{id}/space`, et par espace `GET /space/{id}/folder` et `GET /space/{id}/list` (listes hors dossier). L'arbre est lu une fois par session (⟳ pour le relire). La sélection est dans `data.json`, clé `inbox.sources` : `[{ kind: "space"|"folder"|"list", id, teamId, name }]`. Cocher un parent retire ses enfants de la sélection.
 - **Tickets** : `clickup:inbox` envoie une requête `GET /team/{teamId}/task?space_ids[]|project_ids[]|list_ids[]=…&subtasks=true&order_by=updated` par source, jusqu'à 10 pages de 100 tickets. Il fait une requête par source parce que ClickUp combine ces filtres en ET. Les tickets fermés sont exclus. Les statuts (`inbox.statuses`, par défaut nouveau, à faire, rejeté) sont filtrés côté Clutch, sans tenir compte de la casse ni des accents, car leur nom exact varie d'une liste à l'autre. Sont gardés les tickets qui n'ont personne d'assigné ou qui sont assignés à l'utilisateur de la clé, plus ceux assignés à l'utilisateur dans un statut de `inbox.mineStatuses` (par défaut dev en cours).
-- **Détail** : un clic sur une ligne relit le ticket (`clickup:task`) et l'affiche avec le même rendu que le kanban, plus les boutons Ignorer et À faire.
-- **Ignorer** : l'id est ajouté à `inbox.dismissed` (2 000 derniers), le ticket ne revient plus.
+- **Détail** : un clic sur une ligne (ou Espace) relit le ticket (`clickup:task`) et l'affiche avec le même rendu que le kanban, plus les boutons Ignorer et À faire.
+- **Clavier** : la liste prend le focus à l'ouverture ; J/K ou flèches, ↵, E, Espace, Z. Les tickets sont groupés par liste ClickUp.
+- **Ignorer** : l'id est ajouté à `inbox.dismissed` (2 000 derniers), le ticket ne revient plus. La notification propose « Annuler » (dernier ticket ignoré seulement) ; « Tout rétablir » vide la liste des ignorés.
 - **À faire** : `clickup:assign-me` (`PUT /task/{id}` avec `assignees.add`), puis `clickup:advance` (`PUT /task/{id}` avec `status`) qui passe le ticket au statut relié à la première colonne du kanban du preset de destination (par défaut à faire, nom exact relu dans la liste ; rien si la colonne n'a pas de statut) s'il est dans un statut de `inbox.statuses` ; un ticket dans un autre statut (dev en cours…) n'est pas modifié, et un échec n'empêche pas l'ajout de la carte. Le bouton porte le nom de cette colonne. Ensuite relecture du ticket et ajout d'une carte dans cette colonne, dans `.clutch/kanban.json` du projet choisi en haut du panneau, comme un import par numéro. Les tickets déjà présents sur ce tableau ne sont pas affichés dans l'inbox.
 - Relecture : à l'ouverture, avec ⟳, et toutes les 5 min quand l'inbox est affichée. Changer d'onglet ou de projet relit seulement le kanban de destination.
+
+#### Temps par jour
+
+- `clickup:times(début, fin)` lit `GET /team/{teamId}/time_entries?start_date=…&end_date=…` pour chaque espace de travail du compte ; sans autre filtre, ClickUp renvoie les entrées de l'utilisateur de la clé. Chaque entrée est ramenée à `{ id, start, duration, running, taskId, ref, name, url }` ; un chrono ClickUp en cours (durée négative) est marqué `running` et compté jusqu'à maintenant par l'interface.
+- L'interface (`times.js`) demande une semaine, du lundi 0 h au dimanche soir (heure locale), range chaque entrée dans le jour de son début, puis regroupe par ticket. L'objectif (`times.target`, en heures, dans `data.json`) s'applique du lundi au vendredi ; un week-end n'est affiché que s'il a du temps. Les semaines lues sont gardées 5 min.
+- Relecture : à l'ouverture, au changement de semaine, avec ⟳, au retour sur l'app, après chaque synchro réussie, et toutes les 5 min, panneau ouvert ou non : la journée en cours alimente la jauge « Aujourd'hui » de la barre du haut et la pastille de l'onglet (`refreshToday`).
+- La réponse de `clickup:times` porte aussi ce qui n'est pas encore dans ClickUp (`localTimes`) : `pending`, les propositions en attente de validation, et `running`, le chrono des cartes placées dans une colonne chronométrée d'un projet synchronisé. Les trois sont comptés dans le total du jour et forment les trois segments de la barre. Une proposition se valide depuis l'onglet comme depuis la fenêtre flottante (`clickup:time-confirm`), l'une refermant l'autre.
 
 #### Utilisation du forfait
 
@@ -303,6 +316,7 @@ Prérequis : macOS, Node, git, Claude Code dans le PATH du shell de login.
 - **Synchro ClickUp** :
   - les transitions faites pendant que l'app est fermée ne sont pas vues : au démarrage, l'état du fichier sert de point de départ ;
   - si l'app s'arrête entre la création d'une entrée de temps et l'enregistrement de sa clé, une reprise peut la créer une seconde fois ;
+  - un écart « ≠ statut » n'est vu que si `clickup.status` de la carte est à jour : un ticket changé dans ClickUp n'apparaît qu'après une synchro ou un ⟳ ;
   - le marqueur « non synchronisé » est gardé en mémoire : il disparaît à la relance de l'app, même si l'action est encore en file ;
   - `todo → in_progress → todo → in_progress` repart de zéro : le premier segment n'est pas loggé ;
   - le temps est celui passé dans les colonnes « chrono » du tableau, pas un temps de travail mesuré ;

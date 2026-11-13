@@ -98,7 +98,8 @@ const state = { theme: 'nuit', accounts: [], account: '', defaultName: 'Pro', la
   bg: { kind: '', color: '#1e2a44', image: '', imageName: '', opacity: 78, blur: 0 },
   sound: { name: 'carillon', volume: 60 },
   kanban: { open: false, width: 640, presetId: '' }, side: { width: 640 },
-  inbox: { open: false, statuses: ['nouveau', 'à faire', 'rejeté'], mineStatuses: ['dev en cours'], sources: [], dismissed: [] } };
+  inbox: { open: false, statuses: ['nouveau', 'à faire', 'rejeté'], mineStatuses: ['dev en cours'], sources: [], dismissed: [] },
+  times: { open: false, target: 7 } };
 const byPty = new Map(); // ptyId -> tab
 
 function persist() {
@@ -106,9 +107,10 @@ function persist() {
     theme: state.theme, accounts: state.accounts, account: state.account, defaultName: state.defaultName, chatMode: state.chatMode, presets: state.presets, prompts: state.prompts, layout: state.layout,
     skillConfigs: state.skillConfigs, customSkills: state.customSkills, bg: state.bg, sound: state.sound,
     diff: { scope: state.diff.scope, auto: state.diff.auto },
-    side: { width: state.side.width },
+    side: { width: state.side.width, last: state.side.last },
     kanban: { open: state.kanban.open, presetId: state.kanban.presetId, lastSkill: state.kanban.lastSkill },
     inbox: { open: state.inbox.open, statuses: state.inbox.statuses, mineStatuses: state.inbox.mineStatuses, sources: state.inbox.sources, dismissed: state.inbox.dismissed },
+    times: { open: state.times.open, target: state.times.target },
   });
 }
 
@@ -402,9 +404,12 @@ function renderPresets() {
     const li = document.createElement('li');
     const panes = panesOf(p);
     const summary = panes.length > 1 ? `${panes.length} terminaux` : p.command;
+    // Projet ouvert : sa branche dit plus que son chemin (qui reste dans l'infobulle)
+    const branches = state.tabs.find((t) => t.presetId === p.id && t.branches?.length)?.branches;
+    const where = branches ? `${icon('branch')}${esc(branches.map((b) => b.branch).join(', '))}` : esc(shortPath(p.cwd));
     li.title = `${p.cwd}\n${panes.map((x) => '• ' + paneLabel(x)).join('\n')}`;
     li.innerHTML = `<span class="dot" style="background:${p.color}"></span>
-      <div class="info"><div class="name">${esc(p.name)}</div><div class="path">${esc(shortPath(p.cwd))}${summary ? ' · ' + esc(summary) : ''}</div></div>
+      <div class="info"><div class="name">${esc(p.name)}</div><div class="path">${where}${summary ? ' · ' + esc(summary) : ''}</div></div>
       ${n ? `<span class="count${pstate ? ' ' + pstate : ''}" title="${pstate ? CSTATE[pstate][1] : ''}">${pstate ? icon(CSTATE[pstate][0]) : n}</span>` : ''}
       <div class="tools"><button data-a="skill" title="Lancer un skill sur ce projet (⌘J)">${icon('zap')}</button><button data-a="edit" title="Modifier">${icon('pencil')}</button><button data-a="del" title="Supprimer">${icon('trash')}</button></div>`;
     li.onclick = (e) => {
@@ -416,7 +421,7 @@ function renderPresets() {
     };
     el.appendChild(li);
   }
-  if (!spacePresets().length) el.innerHTML = '<li style="cursor:default;color:var(--muted)">Aucun preset. Clique sur + pour en créer un, ou importe un dossier de projets.</li>';
+  if (!spacePresets().length) el.innerHTML = '<li style="cursor:default;color:var(--muted)">Aucun projet. Clique sur + pour en créer un, ou importe un dossier de projets.</li>';
 }
 
 // Groupe = terminaux affichés ensemble (lancés par un projet, ou réunis à la main / par glisser-déposer).
@@ -713,7 +718,7 @@ function renderAccounts() {
     row.onclick = (e) => {
       const action = e.target.closest('[data-a]')?.dataset.a;
       if (action === 'login') {
-        closeOverlay($('#accounts'));
+        closeOverlay($('#settings'));
         switchSpace(a.id);
         openTerminal({ name: `Connexion · ${a.name}`, cwd: '~', command: 'claude', accountId: a.id });
       } else if (action === 'del' && confirm(`Retirer le compte « ${a.name} » de Clutch ? Les projets qui l’utilisent repasseront sur le compte par défaut.`)) {
@@ -729,11 +734,7 @@ function renderAccounts() {
   }
 }
 
-function openAccounts() {
-  renderAccounts();
-  $('#accounts').classList.remove('hidden');
-  $('#account-form').name.focus();
-}
+const openAccounts = () => openSettings('accounts');
 
 $('#account-form').name.addEventListener('input', (e) => {
   const slug = e.target.value.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -753,8 +754,6 @@ $('#account-form').onsubmit = (e) => {
   // Le formulaire de preset ouvert en dessous doit proposer le nouveau compte
   $('#preset-account').innerHTML = accountOptions($('#preset-account').value);
 };
-$('#btn-accounts').onclick = openAccounts;
-
 /* Espaces : un compte à la fois, ses projets, ses onglets et ses skills */
 
 function inSpace(x) { return (x.accountId || '') === state.account; }
@@ -805,10 +804,9 @@ $('#preset-account').addEventListener('change', (e) => {
   e.target.value = editing?.accountId || '';
   openAccounts();
 });
-$('#accounts').addEventListener('mousedown', (e) => { if (e.target.id === 'accounts') closeOverlay($('#accounts')); });
 
 function deletePreset(p) {
-  if (!confirm(`Supprimer le preset « ${p.name} » ?`)) return;
+  if (!confirm(`Supprimer le projet « ${p.name} » ?`)) return;
   state.presets = state.presets.filter((x) => x.id !== p.id);
   persist();
   renderPresets();
@@ -817,10 +815,23 @@ function deletePreset(p) {
 let editing = null;
 let pickedColor = COLORS[0];
 
-function openPresetModal(p) {
+// Formulaire du projet en trois onglets : général, lancement, ClickUp
+function showPresetTab(tab) {
+  document.querySelectorAll('#preset-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+  document.querySelectorAll('#preset-form .preset-pane').forEach((x) => x.classList.toggle('hidden', x.dataset.pane !== tab));
+}
+$('#preset-tabs').onclick = (e) => {
+  const b = e.target.closest('button');
+  if (b) showPresetTab(b.dataset.tab);
+};
+// Nom ou dossier manquant alors qu'un autre onglet est affiché : on y revient, sinon rien ne se passe
+$('#preset-form').addEventListener('invalid', () => showPresetTab('general'), true);
+
+function openPresetModal(p, tab = 'general') {
   editing = p || null;
   const f = $('#preset-form');
-  $('#modal-title').textContent = p ? 'Modifier le preset' : 'Nouveau preset';
+  $('#modal-title').textContent = p ? 'Modifier le projet' : 'Nouveau projet';
+  showPresetTab(tab);
   f.name.value = p?.name || '';
   f.cwd.value = p?.cwd || '';
   modalPanes = (p ? panesOf(p) : [{ dir: '', cmd: 'claude' }]).map(({ dir, cmd }) => {
@@ -839,11 +850,10 @@ function openPresetModal(p) {
   f.cuLogTime.checked = cu.logTime;
   $('#cu-check-result').textContent = '';
   renderCuSync();
-  modalCols = kbColumns(p);
-  renderKbCols();
-  loadCuStatusList();
+  // Les colonnes se règlent sur le tableau ; ici, un rappel de ce qui est relié
+  $('#cu-cols').textContent = `Colonnes du tableau : ${kbColumns(p).map((c) => `${c.label} → ${c.status || 'aucun statut'}${c.timer ? ' (chrono)' : ''}`).join(' · ')}. Elles se règlent sur le kanban, en cliquant sur l'en-tête d'une colonne.`;
   $('#modal').classList.remove('hidden');
-  f.name.focus();
+  if (tab === 'general') f.name.focus();
 }
 
 function renderColors() {
@@ -921,43 +931,6 @@ $('#btn-add-subs').onclick = async () => {
 };
 $('#preset-form').cwd.addEventListener('change', loadModalSubdirs);
 
-/* Colonnes du kanban du preset : nom, statut ClickUp relié, chrono (voir kanban-cols.js) */
-let modalCols = [];
-function renderKbCols() {
-  const el = $('#kb-cols');
-  el.innerHTML = '';
-  modalCols.forEach((c, i) => {
-    const row = document.createElement('div');
-    row.className = 'pane-row col-row';
-    row.innerHTML = `
-      <input class="col-label" spellcheck="false" placeholder="Nom de la colonne"${c.id ? ` title="« status » dans kanban.json : ${esc(c.id)}"` : ''}>
-      <input class="col-status" spellcheck="false" list="cu-status-list" placeholder="Statut ClickUp (facultatif)" title="Statut donné au ticket quand sa carte avance dans cette colonne">
-      <label class="check" title="Compter le temps passé dans cette colonne, proposé pour ClickUp quand la carte avance"><input type="checkbox" class="col-timer"> chrono</label>
-      <button type="button" class="pane-up" title="Vers la gauche du tableau"${i ? '' : ' disabled'}>${icon('arrow-up')}</button>
-      <button type="button" class="pane-del" title="Retirer (ses cartes iront dans la première colonne)"${modalCols.length === 1 ? ' disabled' : ''}>${icon('x')}</button>`;
-    row.querySelector('.col-label').value = c.label;
-    row.querySelector('.col-status').value = c.status;
-    row.querySelector('.col-timer').checked = c.timer;
-    row.querySelector('.col-label').oninput = (e) => { c.label = e.target.value; };
-    row.querySelector('.col-status').oninput = (e) => { c.status = e.target.value; };
-    row.querySelector('.col-timer').onchange = (e) => { c.timer = e.target.checked; };
-    row.querySelector('.pane-up').onclick = () => { modalCols.splice(i - 1, 0, ...modalCols.splice(i, 1)); renderKbCols(); };
-    row.querySelector('.pane-del').onclick = () => { modalCols.splice(i, 1); renderKbCols(); };
-    el.appendChild(row);
-  });
-}
-$('#btn-add-col').onclick = () => {
-  modalCols.push({ id: '', label: '', status: '', timer: false });
-  renderKbCols();
-  $('#kb-cols').lastChild.querySelector('.col-label').focus();
-};
-// Colonnes saisies : celles sans nom sont ignorées, les nouvelles reçoivent un id tiré de leur nom
-function formKbCols() {
-  const cols = modalCols.map((c) => ({ ...c, label: c.label.trim(), status: c.status.trim() })).filter((c) => c.label);
-  for (const c of cols) c.id ||= kbNewColId(c.label, cols.map((x) => x.id).filter(Boolean));
-  return cols;
-}
-
 /* Synchro ClickUp du preset (appliquée par le processus principal) */
 const CU_SYNC_DEFAULTS = { enabled: false, logTime: true };
 const renderCuSync = () => $('#cu-sync-fields').classList.toggle('off', !$('#preset-form').cuEnabled.checked);
@@ -965,23 +938,13 @@ $('#preset-form').cuEnabled.addEventListener('change', renderCuSync);
 function formCuSync(f) {
   return { enabled: f.cuEnabled.checked, logTime: f.cuLogTime.checked };
 }
-// Statuts de la liste ClickUp du projet, proposés dans le champ « Statut ClickUp » des colonnes
-const fillCuStatusList = (statuses) => { $('#cu-status-list').innerHTML = (statuses || []).map((s) => `<option value="${esc(s)}">`).join(''); };
-async function loadCuStatusList() {
-  const p = editing;
-  fillCuStatusList([]);
-  if (!p?.cwd) return;
-  const res = await api.clickupCheckStatuses(p.cwd, []);
-  if (editing === p && !$('#modal').classList.contains('hidden')) fillCuStatusList(res.statuses);
-}
 $('#btn-cu-check').onclick = async () => {
   const f = $('#preset-form');
   const out = $('#cu-check-result');
-  const names = [...new Set(formKbCols().map((c) => c.status).filter(Boolean))];
+  const names = [...new Set(kbColumns(editing).map((c) => c.status).filter(Boolean))];
   out.className = '';
   out.textContent = 'Vérification…';
   const res = await api.clickupCheckStatuses(f.cwd.value.trim(), names);
-  fillCuStatusList(res.statuses);
   out.className = res.error || res.missing.length ? 'err' : 'ok';
   out.textContent = res.error
     || (res.missing.length ? `Introuvable dans « ${res.list} » : ${res.missing.join(', ')}. Statuts de la liste : ${res.statuses.join(', ')}`
@@ -1000,9 +963,9 @@ $('#preset-form').onsubmit = (e) => {
   const cu = formCuSync(f);
   // Synchro désactivée et réglages par défaut : rien d'enregistré, le preset reste comme avant
   if (cu.enabled || editing?.clickupSync || Object.keys(CU_SYNC_DEFAULTS).some((k) => k !== 'enabled' && cu[k] !== CU_SYNC_DEFAULTS[k])) data.clickupSync = cu;
-  // Pareil pour les colonnes du kanban (toutes sans nom : on garde les précédentes)
-  const columns = formKbCols();
-  if (columns.length && (editing?.kanban || JSON.stringify(columns) !== JSON.stringify(kbColumns(null)))) data.kanban = { ...editing?.kanban, columns };
+  // Statuts reliés venus de l'ancien réglage (clickupSync.todo…) : rangés avec les colonnes avant qu'il soit remplacé
+  const columns = kbColumns(editing);
+  if (editing?.kanban || JSON.stringify(columns) !== JSON.stringify(kbColumns(null))) data.kanban = { ...editing?.kanban, columns };
   if (editing) Object.assign(editing, data);
   else state.presets.push({ id: uid(), ...data });
   if (data.accountId !== state.account) renderSpaceSwitch();
@@ -1011,7 +974,7 @@ $('#preset-form').onsubmit = (e) => {
   renderPresets();
   closeModal();
   scanSkills();
-  // Le tableau affiché reprend les nouvelles colonnes
+  // La synchro du projet a pu changer : le tableau affiché en tient compte
   if (state.kanban.open) loadKanban();
   if (state.inbox.open) renderInbox();
 };
@@ -1144,6 +1107,8 @@ function showSideView(view) {
 function closeOverlay(el) {
   el.classList.add('hidden');
   if (el.id === 'skill-run') runTask = null;
+  // La fiche d'un ticket de l'inbox refermée : le tri au clavier continue
+  if (el.id === 'ticket-view' && state.inbox.open) return $('#ib-list').focus();
   focusActive();
 }
 
@@ -1184,14 +1149,16 @@ function openSkillRun(skill, presetId) {
   sel.innerHTML = (ask ? '<option value="" disabled selected>Choisis un projet…</option>' : '')
     + ordered.map((p) => `<option value="${p.id}">${esc(p.name)} — ${esc(shortPath(p.cwd))}${ask && p.id === last?.presetId ? ' (dernier utilisé)' : ''}</option>`).join('');
   sel.value = ask ? '' : (presets.find((p) => p.id === presetId) || presets.find((p) => p.id === last?.presetId) || presets[0]).id;
-  $('#skill-run-title').textContent = runTask ? `Lancer « ${runTask.title} »` : skill.name;
+  const taskRef = runTask?.clickup ? runTask.clickup.customId || runTask.clickup.id : '';
+  $('#skill-run-title').textContent = runTask ? `${taskRef ? `${taskRef} · ` : ''}${runTask.title}` : skill.name;
+  $('#skill-run-form button[type=submit]').textContent = !runTask ? 'Lancer ⌘↵' : skill.key === PLAIN_TASK.key ? 'Envoyer à Claude ⌘↵' : `Lancer /${skill.invoke} ⌘↵`;
   $('#skill-run-desc').textContent = skill.description || skill.invoke;
   $('#skill-run-skill-wrap').classList.toggle('hidden', !runTask);
-  // Depuis une carte : le détail de la tâche à gauche, le lancement à droite
-  const info = runTask ? kbTicketInfo(runTask) : '';
-  $('#skill-run-task').innerHTML = info;
+  // Depuis une carte : la fiche de la tâche d'abord, le lancement en dessous avec ses réglages repliés
+  $('#skill-run-task').innerHTML = runTask ? kbTicketInfo(runTask) : '';
   $('#skill-run-task').scrollTop = 0;
-  $('#skill-run-form').classList.toggle('with-task', !!info);
+  $('#skill-run-form').classList.toggle('with-task', !!runTask);
+  $('#skill-run-sum').classList.toggle('hidden', !runTask);
   if (runTask) renderRunSkills(skill);
   $('#btn-skill-run-edit').classList.toggle('hidden', skill.key === PLAIN_TASK.key);
 
@@ -1243,6 +1210,9 @@ function openSkillRun(skill, presetId) {
   $('#skill-run').classList.remove('hidden');
   // Depuis le kanban tout est prérempli : Entrée lance directement
   const firstEmpty = [...fieldsEl.querySelectorAll('[data-key]')].find((i) => i.required && !i.value);
+  // Réglages repliés tant qu'il n'y a rien à compléter (un champ obligatoire caché bloquerait l'envoi)
+  $('#skill-run-more').classList.toggle('folded', !!runTask && !ask && !firstEmpty);
+  updateRunSummary();
   (ask ? sel : firstEmpty || (runTask ? null : fieldsEl.querySelector('[data-key]')) || $('#skill-run-form button[type=submit]')).focus();
 }
 
@@ -1252,6 +1222,20 @@ function renderRunTargets() {
   $('#skill-run-target').innerHTML = '<option value="new">Nouveau terminal Claude</option>'
     + tabs.map((t) => `<option value="${t.key}">Session ouverte : ${esc(t.title)}</option>`).join('');
 }
+
+// Résumé du lancement depuis une carte : où ça part, et de quoi déplier les réglages
+function updateRunSummary() {
+  if (!runTask) return;
+  const p = state.presets.find((x) => x.id === $('#skill-run-preset').value);
+  const target = $('#skill-run-target').selectedOptions[0]?.textContent || '';
+  const folded = $('#skill-run-more').classList.contains('folded');
+  $('#skill-run-sum').innerHTML = `Dans <b>${esc(p?.name || '…')}</b>, ${esc(target.charAt(0).toLowerCase() + target.slice(1))} · <button type="button" class="link" data-a="more">${folded ? 'Modifier le projet, la cible ou le prompt' : 'Replier'}</button>`;
+}
+$('#skill-run-sum').onclick = (e) => {
+  if (!e.target.closest('[data-a="more"]')) return;
+  $('#skill-run-more').classList.toggle('folded');
+  updateRunSummary();
+};
 
 function runValues() {
   const p = state.presets.find((x) => x.id === $('#skill-run-preset').value);
@@ -1269,7 +1253,8 @@ $('#skill-run-skill').addEventListener('change', (e) => {
   const skill = [PLAIN_TASK, ...allSkills()].find((s) => s.key === e.target.value);
   if (skill) openSkillRun(skill, $('#skill-run-preset').value);
 });
-$('#skill-run-preset').addEventListener('change', () => { renderRunTargets(); updateRunPreview(); });
+$('#skill-run-preset').addEventListener('change', () => { renderRunTargets(); updateRunPreview(); updateRunSummary(); });
+$('#skill-run-target').addEventListener('change', updateRunSummary);
 $('#skill-run-form').onsubmit = (e) => {
   e.preventDefault();
   const { p, values } = runValues();
@@ -1433,33 +1418,52 @@ async function loadDiff() {
   }
   const patches = await api.gitDiff(t.git.repos, state.diff.scope === 'session');
   if (seq !== diffSeq) return;
+  const before = JSON.stringify(t.branches);
   t.branches = patches.filter((p) => p.branch).map((p) => ({ name: p.name, branch: p.branch }));
+  if (JSON.stringify(t.branches) !== before) renderPresets();
   // Plusieurs dépôts (ex. front/ et back/) : chaque chemin est préfixé par son dépôt
   const files = patches.flatMap(({ name, patch }) =>
     parseDiff(patch).map((f) => ({ ...f, repo: name, path: name ? `${name}/${f.path}` : f.path })));
   if (!files.length) t.diffDismissed = false;
   // L'ouverture auto ne prend pas la place du kanban : le compteur de l'onglet suffit
-  else if (state.diff.auto && !t.diffDismissed && !state.diff.open && !state.kanban.open && !state.inbox.open) setDiffOpen(true);
+  else if (state.diff.auto && !t.diffDismissed && !state.diff.open && !state.kanban.open && !state.inbox.open && !state.times.open) setDiffOpen(true);
   $('#side-diff-count').textContent = files.length || '';
   renderDiff(t, files);
 }
 
-// Diff, kanban et inbox partagent le panneau de droite : un seul visible à la fois, choisi par onglet
+// Diff, kanban, inbox et temps partagent le panneau de droite : un seul visible à la fois, choisi par onglet
 function updateSidePanel() {
-  const open = state.diff.open || state.kanban.open || state.inbox.open;
+  const open = state.diff.open || state.kanban.open || state.inbox.open || state.times.open;
   $('#side-panel').classList.toggle('hidden', !open);
   $('#side-resizer').classList.toggle('hidden', !open);
-  $('#side-panel').style.width = state.side.width + 'px';
+  // Tableau agrandi : il ne laisse aux terminaux que le minimum, le temps d'une réorganisation
+  const wide = state.side.wide && state.kanban.open;
+  $('#side-panel').style.width = (wide ? Math.max(state.side.width, $('#workspace').offsetWidth - 320) : state.side.width) + 'px';
   document.querySelectorAll('#side-tabs button').forEach((b) => b.classList.toggle('on', state[b.dataset.side].open));
+  $('#btn-side').classList.toggle('on', open);
+  // Retenu pour le bouton du panneau : il rouvre le dernier onglet affiché
+  state.side.last = SIDE_TABS.find((k) => state[k].open) || state.side.last;
   requestAnimationFrame(() => state.tabs.forEach(fitTab));
 }
+
+// Un seul bouton en haut à droite pour le panneau : les onglets choisissent ce qu'il affiche
+const SIDE_TABS = ['diff', 'kanban', 'inbox', 'times'];
+function toggleSide() {
+  const cur = SIDE_TABS.find((k) => state[k].open);
+  const k = cur || state.side.last;
+  if (k === 'diff') toggleDiff();
+  else if (k === 'inbox') setInboxOpen(!cur);
+  else if (k === 'times') setTimesOpen(!cur);
+  else setKanbanOpen(!cur);
+}
+$('#btn-side').onclick = toggleSide;
 
 function setDiffOpen(open) {
   if (open && state.kanban.open) setKanbanOpen(false);
   if (open && state.inbox.open) setInboxOpen(false);
+  if (open && state.times.open) setTimesOpen(false);
   state.diff.open = open;
   $('#diff-panel').classList.toggle('hidden', !open);
-  $('#btn-diff').classList.toggle('on', open);
   updateSidePanel();
 }
 
@@ -1555,7 +1559,6 @@ $('#diff-collapse').onclick = () => {
     else state.diff.collapsed.delete(f.dataset.path);
   }
 };
-$('#btn-diff').onclick = toggleDiff;
 $('#diff-close').onclick = toggleDiff;
 $('#diff-refresh').onclick = refreshDiff;
 $('#diff-scope').onchange = (e) => { state.diff.scope = e.target.value; persist(); refreshDiff(); };
@@ -1565,6 +1568,7 @@ api.onGitChanged((root) => { if (activeTab()?.git?.repos.some((r) => r.root === 
 document.querySelectorAll('#side-tabs button').forEach((b) => b.onclick = () => {
   if (b.dataset.side === 'kanban') return state.kanban.open || setKanbanOpen(true);
   if (b.dataset.side === 'inbox') return state.inbox.open || setInboxOpen(true);
+  if (b.dataset.side === 'times') return state.times.open || setTimesOpen(true);
   if (!state.diff.open) toggleDiff();
 });
 
@@ -1590,16 +1594,57 @@ $('#side-resizer').addEventListener('mousedown', (e) => {
 
 /* ---------- Notifications ---------- */
 
-// Discrète par défaut ; une erreur reste plus longtemps et se ferme d'un clic
-function toast(text, kind = '') {
+// Discrète par défaut ; une erreur reste plus longtemps et se ferme d'un clic.
+// action : { label, run } ajoute un bouton (« Annuler »…) et laisse le temps de s'en servir
+function toast(text, kind = '', action = null) {
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
-  el.innerHTML = `${kind === 'err' ? icon('x') : icon('check')}<span>${esc(text)}</span>`;
-  el.onclick = () => el.remove();
+  el.innerHTML = `${kind === 'err' ? icon('x') : icon('check')}<span>${esc(text)}</span>${action ? `<button type="button">${esc(action.label)}</button>` : ''}`;
+  el.onclick = (e) => {
+    if (action && e.target.closest('button')) action.run();
+    el.remove();
+  };
   $('#toasts').appendChild(el);
-  setTimeout(() => el.classList.add('out'), kind === 'err' ? 9000 : 2500);
-  setTimeout(() => el.remove(), kind === 'err' ? 9400 : 2900);
+  const stay = kind === 'err' ? 9000 : action ? 6000 : 2500;
+  setTimeout(() => el.classList.add('out'), stay);
+  setTimeout(() => el.remove(), stay + 400);
 }
+
+// Petit menu au clic droit : items = [{ label, run }], refermé au premier clic ou à Échap
+function contextMenu(e, items) {
+  document.querySelector('.ctx-menu')?.remove();
+  if (!items.length) return;
+  const el = document.createElement('div');
+  el.className = 'ctx-menu';
+  el.innerHTML = items.map((it, i) => `<button type="button" data-i="${i}">${esc(it.label)}</button>`).join('');
+  document.body.appendChild(el);
+  el.style.left = `${Math.min(e.clientX, window.innerWidth - el.offsetWidth - 8)}px`;
+  el.style.top = `${Math.min(e.clientY, window.innerHeight - el.offsetHeight - 8)}px`;
+  const close = (ev) => {
+    if (ev.type === 'keydown' && ev.key !== 'Escape') return;
+    const i = ev.type === 'mousedown' && ev.target.closest?.('.ctx-menu button')?.dataset.i;
+    el.remove();
+    window.removeEventListener('mousedown', close, true);
+    window.removeEventListener('keydown', close, true);
+    if (i != null && i !== false) items[+i].run();
+  };
+  window.addEventListener('mousedown', close, true);
+  window.addEventListener('keydown', close, true);
+}
+
+/* Raccourcis clavier : la liste complète, ouverte par ⌘/ ou le rappel en bas de la barre latérale */
+const KEYS = [
+  ['⌘K', 'Lancer un projet, aller à un onglet, changer de thème'], ['⌘J', 'Lancer un skill sur le projet actif'], ['⌘L', 'Écrire un prompt'],
+  ['⌘T', 'Nouveau terminal'], ['⌘W', 'Fermer l\'onglet'], ['⌘1-9', 'Aller à un onglet'], ['⌘G', 'Onglets ou grille'],
+  ['⌘D', 'Modifications'], ['⌘B', 'Kanban'], ['⌘I', 'Inbox ClickUp'],
+  ['Kanban', 'Tab pour atteindre une carte, ← → pour la changer de colonne, ↵ pour l\'ouvrir, clic droit pour « Déplacer vers »'],
+  ['Inbox', 'J K pour naviguer, ↵ pour prendre le ticket, E pour l\'ignorer, Espace pour le détail, Z pour annuler'],
+];
+function openKeys() {
+  $('#keys-list').innerHTML = KEYS.map(([k, what]) => `<dt><kbd>${k}</kbd></dt><dd>${esc(what)}</dd>`).join('');
+  $('#keys').classList.remove('hidden');
+}
+$('#btn-keys').onclick = openKeys;
 
 /* ---------- Paramètres ---------- */
 
@@ -1612,16 +1657,35 @@ async function renderClickupStatus(res) {
   $('#cu-token').placeholder = res.configured ? 'Nouvelle clé pk_… (la clé actuelle est enregistrée)' : 'pk_…';
 }
 
-function openSettings() {
-  $('#cu-token').value = '';
-  $('#cu-status').textContent = '…';
+// Paramètres en trois onglets : apparence (thème, fond, son), comptes Claude, ClickUp
+let settingsTab = 'look';
+function showSettingsTab(tab) {
+  settingsTab = tab;
+  document.querySelectorAll('#settings-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+  document.querySelectorAll('#settings .settings-pane').forEach((p) => p.classList.toggle('hidden', p.dataset.pane !== tab));
+  if (tab === 'look') renderThemePop();
+  else if (tab === 'accounts') {
+    renderAccounts();
+    $('#account-form').name.focus();
+  } else {
+    $('#cu-token').value = '';
+    $('#cu-status').textContent = '…';
+    $('#cu-token').focus();
+    renderClickupStatus();
+    openInboxSettings();
+  }
+}
+// Sans onglet précisé, le dernier affiché
+function openSettings(tab = settingsTab) {
   $('#settings').classList.remove('hidden');
-  $('#cu-token').focus();
-  renderClickupStatus();
-  openInboxSettings();
+  showSettingsTab(tab);
 }
 
-$('#btn-settings').onclick = openSettings;
+$('#btn-settings').onclick = () => openSettings();
+$('#settings-tabs').onclick = (e) => {
+  const b = e.target.closest('button');
+  if (b) showSettingsTab(b.dataset.tab);
+};
 $('#settings').addEventListener('mousedown', (e) => { if (e.target.id === 'settings') closeOverlay($('#settings')); });
 $('#settings-form').onsubmit = async (e) => {
   e.preventDefault();
@@ -1648,7 +1712,7 @@ function applyTheme(name) {
   renderThemePop();
 }
 
-// Sélecteur compact : une grille de vignettes, puis le réglage du fond
+// Onglet « Apparence » des paramètres : une grille de vignettes, puis le fond et le son
 function renderThemePop() {
   const b = state.bg;
   $('#theme-pop').innerHTML = `
@@ -1753,11 +1817,6 @@ $('#theme-pop').addEventListener('input', (e) => {
   if (out?.tagName === 'SPAN') out.textContent = e.target.id === 'bg-blur' ? `${v}px` : `${v}%`;
   applyBg();
   saveBgSoon();
-});
-$('#btn-theme').onclick = (e) => { e.stopPropagation(); renderThemePop(); $('#theme-pop').classList.toggle('hidden'); };
-document.addEventListener('click', (e) => {
-  // composedPath : un clic dans le sélecteur le redessine, la cible n'est alors plus dans le DOM
-  if (!e.composedPath().includes($('#theme-pop')) && e.target.id !== 'btn-theme') $('#theme-pop').classList.add('hidden');
 });
 
 /* ---------- Barre de prompt ---------- */
@@ -1915,7 +1974,7 @@ function renderPalette() {
     ...spaceTabs().map((t) => ({ kind: 'Onglet', label: t.title, sub: shortPath(t.cwd), color: t.color, run: () => activate(t.key) })),
     ...skillItems,
     ...(activeTab() ? [{ kind: 'Action', label: 'Renommer l’onglet…', sub: activeTab().title, color: 'transparent', run: () => setTimeout(() => startRename(activeTab()), 50) }] : []),
-    { kind: 'Action', label: 'Nouveau preset…', sub: '', color: 'transparent', run: () => openPresetModal() },
+    { kind: 'Action', label: 'Nouveau projet…', sub: '', color: 'transparent', run: () => openPresetModal() },
     { kind: 'Action', label: 'Comptes Claude…', sub: 'pro, perso…', color: 'transparent', run: () => openAccounts() },
     ...allAccounts().filter((a) => a.id !== state.account).map((a) => ({ kind: 'Compte', label: `Passer sur ${a.name}`, sub: a.dir || '~/.claude', color: 'var(--accent)', run: () => switchSpace(a.id) })),
     ...Object.entries(THEMES).map(([key, th]) => ({ kind: 'Thème', label: `Thème : ${th.label}`, sub: th.desc, color: th.swatches[2], run: () => { applyTheme(key); persist(); } })),
@@ -1954,7 +2013,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!$('#palette').classList.contains('hidden')) return closePalette();
     if (!$('#modal').classList.contains('hidden')) return closeModal();
-    const open = document.querySelector('#accounts:not(.hidden), #settings:not(.hidden), #skill-edit:not(.hidden), #skill-run:not(.hidden), #ticket-view:not(.hidden)');
+    const open = document.querySelector('#settings:not(.hidden), #skill-edit:not(.hidden), #skill-run:not(.hidden), #ticket-view:not(.hidden), #keys:not(.hidden)');
     if (open) return closeOverlay(open);
   }
   if (!e.metaKey || e.altKey || e.ctrlKey) return;
@@ -1962,6 +2021,7 @@ window.addEventListener('keydown', (e) => {
   let handled = true;
   if (k === 'k' && !e.shiftKey) openPalette();
   else if (k === 'j') openPalette({ mode: 'skills', presetId: activeTab()?.presetId });
+  else if (k === '/') openKeys();
   else if (k === 'enter' && !$('#skill-run').classList.contains('hidden')) $('#skill-run-form').requestSubmit();
   else if (k === 't') openTerminal({ name: 'shell', cwd: activeTab()?.cwd || '~', command: '' });
   else if (k === 'w') { if (state.activeKey) closeTab(state.activeKey); }
@@ -2099,7 +2159,9 @@ api.onRebuildLog((text) => {
   Object.assign(state.sound, data.sound || {});
   Object.assign(state.kanban, data.kanban || {});
   Object.assign(state.inbox, data.inbox || {});
+  Object.assign(state.times, data.times || {});
   state.side.width = data.side?.width || state.kanban.width || state.side.width;
+  state.side.last = data.side?.last;
   applyTheme(data.theme || 'nuit');
   applyBg();
   state.customSkills = data.customSkills || [];
@@ -2114,4 +2176,5 @@ api.onRebuildLog((text) => {
   refreshUsage(true);
   initKanban();
   initInbox();
+  initTimes();
 })();

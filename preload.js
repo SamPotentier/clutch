@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('api', {
   clickupInbox: (sources, statuses, mineStatuses) => ipcRenderer.invoke('clickup:inbox', sources, statuses, mineStatuses),
   clickupAssignMe: (taskId) => ipcRenderer.invoke('clickup:assign-me', taskId),
   clickupAdvance: (taskId, allowed, target) => ipcRenderer.invoke('clickup:advance', taskId, allowed, target),
+  clickupTimes: (start, end) => ipcRenderer.invoke('clickup:times', start, end),
+  clickupAlign: (dir, taskId) => ipcRenderer.invoke('clickup:align', dir, taskId),
   clickupTimePending: () => ipcRenderer.invoke('clickup:time-pending'),
   clickupTimeConfirm: (id, duration) => ipcRenderer.invoke('clickup:time-confirm', id, duration),
   onClickupTimePending: (cb) => ipcRenderer.on('clickup:time-pending', (_e, p) => cb(p)),

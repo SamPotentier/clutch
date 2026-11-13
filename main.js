@@ -467,8 +467,16 @@ function readKanban(dir) {
     return { tasks: Array.isArray(data.tasks) ? data.tasks : [] };
   } catch (e) {
     // Fichier absent : tableau vide ; fichier cassé : on le signale sans l'écraser
-    return e.code === 'ENOENT' ? { tasks: [] } : { tasks: [], error: e.message };
+    return e.code === 'ENOENT' ? { tasks: [] } : { tasks: [], error: e.message, line: jsonErrorLine(kanbanFile(dir), e) };
   }
+}
+// Ligne d'une erreur d'analyse JSON (« … at position 214 » ou « … (line 12 column 3) »), si on la retrouve
+function jsonErrorLine(file, e) {
+  const line = String(e.message).match(/line (\d+)/);
+  if (line) return +line[1];
+  const pos = String(e.message).match(/position (\d+)/);
+  if (!pos) return null;
+  try { return fs.readFileSync(file, 'utf8').slice(0, +pos[1]).split('\n').length; } catch { return null; }
 }
 function writeKanban(dir, tasks) {
   const file = kanbanFile(dir);
@@ -550,8 +558,21 @@ let clickupTeams = null;
 async function clickupGet(token, route) {
   const res = await fetch(`https://api.clickup.com/api/v2/${route}`, { headers: { Authorization: token } });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(body.err || `ClickUp a répondu ${res.status}`), { status: res.status });
+  if (!res.ok) throw Object.assign(new Error(body.err || `ClickUp a répondu ${res.status}`), { status: res.status, http: true });
   return body;
+}
+
+// Message affiché pour une erreur ClickUp : ce qui se passe et quoi faire, plutôt que le texte brut.
+// Les erreurs levées par Clutch (statut introuvable dans la liste, clé absente…) portent déjà leur message.
+function clickupError(e) {
+  if (e.message === 'fetch failed' || e.cause?.code) return 'ClickUp est injoignable : vérifie ta connexion';
+  if (!e.http) return e.message;
+  if (e.status === 401) return 'Clé ClickUp refusée : vérifie-la dans les paramètres';
+  if (e.status === 403) return 'ClickUp refuse l\'accès à cet élément avec ta clé';
+  if (e.status === 404) return 'Introuvable dans ClickUp (supprimé ou déplacé ?)';
+  if (e.status === 429) return 'ClickUp limite les requêtes pour l\'instant : réessaie dans une minute';
+  if (e.status >= 500) return `ClickUp ne répond pas pour l'instant (erreur ${e.status}) : réessaie dans un moment`;
+  return `ClickUp a refusé la demande : ${e.message}`;
 }
 
 ipcMain.handle('clickup:status', async () => {
@@ -561,7 +582,7 @@ ipcMain.handle('clickup:status', async () => {
     const { user } = await clickupGet(token, 'user');
     return { configured: true, user: user?.username || user?.email || '' };
   } catch (e) {
-    return { configured: true, error: e.message };
+    return { configured: true, error: clickupError(e) };
   }
 });
 ipcMain.handle('clickup:set-token', async (_e, token) => {
@@ -577,7 +598,7 @@ ipcMain.handle('clickup:set-token', async (_e, token) => {
   try {
     ({ user } = await clickupGet(token, 'user'));
   } catch (e) {
-    return { configured: false, error: e.status === 401 ? 'Clé refusée par ClickUp' : e.message };
+    return { configured: false, error: e.status === 401 ? 'Clé refusée par ClickUp' : clickupError(e) };
   }
   if (!safeStorage.isEncryptionAvailable()) return { configured: false, error: 'Chiffrement indisponible sur ce Mac' };
   secrets.clickup = safeStorage.encryptString(token).toString('base64');
@@ -636,7 +657,7 @@ async function clickupTask(ref) {
       },
     };
   } catch (e) {
-    return { error: e.status === 404 || e.status === 400 ? `Ticket ${id} introuvable` : e.status === 401 ? 'Clé ClickUp refusée : vérifie-la dans les paramètres' : e.message };
+    return { error: e.status === 404 || e.status === 400 ? `Ticket ${id} introuvable` : clickupError(e) };
   }
 }
 ipcMain.handle('clickup:task', (_e, ref) => clickupTask(ref));
@@ -806,7 +827,7 @@ async function clickupSend(token, method, route, body) {
     method, headers: { Authorization: token, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(json.err || `ClickUp a répondu ${res.status}`), { status: res.status });
+  if (!res.ok) throw Object.assign(new Error(json.err || `ClickUp a répondu ${res.status}`), { status: res.status, http: true });
   return json;
 }
 
@@ -832,7 +853,7 @@ async function runSyncAction(a, token) {
   if (a.kind === 'status') {
     // Relu juste avant d'écrire : on n'avance que depuis un statut attendu, sinon on ne touche à rien
     const current = task.status?.status;
-    if (!a.allowed.some((s) => sameStatus(s, current))) {
+    if (sameStatus(current, a.target) || (!a.force && !a.allowed.some((s) => sameStatus(s, current)))) {
       rememberStatus(a, current);
       return { skipped: true, status: current, detail: `déjà « ${current} », inchangé` };
     }
@@ -875,10 +896,10 @@ async function runSyncQueue() {
         const wait = SYNC_BACKOFF[Math.min(a.tries, SYNC_BACKOFF.length - 1)];
         a.tries++;
         a.next = Date.now() + wait;
-        syncNotify(a, false, { error: `${error.message} — nouvelle tentative dans ${Math.round(wait / 60000) || 1} min`, queued: true });
+        syncNotify(a, false, { error: `${clickupError(error)} — nouvelle tentative dans ${Math.round(wait / 60000) || 1} min`, queued: true });
       } else {
         syncQueue = syncQueue.filter((x) => x !== a);
-        if (error) syncNotify(a, false, { error: error.message });
+        if (error) syncNotify(a, false, { error: clickupError(error) });
         else syncNotify(a, true, result);
       }
       persistSyncQueue();
@@ -889,6 +910,17 @@ async function runSyncQueue() {
   const next = Math.min(...syncQueue.map((x) => x.next));
   if (Number.isFinite(next)) syncTimer = setTimeout(runSyncQueue, Math.max(1000, next - Date.now()));
 }
+
+// Carte et ticket qui ne disent plus la même chose (carte reculée, ticket changé dans ClickUp) : sur
+// demande explicite, le ticket prend le statut relié à la colonne de la carte, y compris en arrière
+ipcMain.handle('clickup:align', (_e, dir, taskId) => {
+  const cfg = syncConfig(dir);
+  const task = readKanban(dir).tasks.find((t) => String(t.id) === String(taskId));
+  const col = cfg && task?.clickup?.id && cfg.columns.find((c) => c.id === kbStatus(task.status, cfg.columns));
+  if (!col?.status) return false;
+  enqueueSync({ project: cfg.cwd, dir, taskId: String(task.id), clickupId: task.clickup.id, ref: task.clickup.customId || task.clickup.id, kind: 'status', force: true, allowed: [], target: col.status });
+  return true;
+});
 
 // Temps en attente de validation : relus par l'interface au démarrage, ils survivent à une relance
 ipcMain.handle('clickup:time-pending', () => syncPending);
@@ -917,7 +949,7 @@ ipcMain.handle('clickup:check-statuses', async (_e, dir, names) => {
     const statuses = (list.statuses || []).map((x) => x.status);
     return { list: list.name, statuses, missing: names.filter((n) => !statuses.some((x) => sameStatus(x, n))) };
   } catch (e) {
-    return { error: e.message };
+    return { error: clickupError(e) };
   }
 });
 
@@ -930,7 +962,6 @@ async function clickupUserId(token) {
   if (clickupMe?.token !== token) clickupMe = { token, id: (await clickupGet(token, 'user')).user.id };
   return clickupMe.id;
 }
-const clickupError = (e) => (e.status === 401 ? 'Clé ClickUp refusée : vérifie-la dans les paramètres' : e.message);
 
 // Arborescence à cocher dans les paramètres : espaces › dossiers › listes, par espace de travail
 ipcMain.handle('clickup:hierarchy', async () => {
@@ -1037,6 +1068,52 @@ ipcMain.handle('clickup:advance', async (_e, taskId, allowed, target) => {
     return { error: clickupError(e) };
   }
 });
+
+/* ---------- Temps par jour ---------- */
+// Entrées de temps de l'utilisateur de la clé entre deux dates (ms), tous espaces de travail confondus
+ipcMain.handle('clickup:times', async (_e, start, end) => {
+  const token = clickupToken();
+  if (!token) return { error: 'Ajoute ta clé ClickUp dans les paramètres' };
+  try {
+    clickupTeams ||= (await clickupGet(token, 'team')).teams.map((t) => t.id);
+    const q = new URLSearchParams({ start_date: Math.round(start), end_date: Math.round(end) });
+    const lists = await Promise.all(clickupTeams.map((team) => clickupGet(token, `team/${encodeURIComponent(team)}/time_entries?${q}`)));
+    const entries = lists.flatMap((r) => r.data || []).map((e) => {
+      const task = e.task && typeof e.task === 'object' ? e.task : null;
+      return {
+        id: e.id,
+        start: +e.start,
+        // Un chrono ClickUp en cours a une durée négative : l'interface compte jusqu'à maintenant
+        duration: Math.max(0, +e.duration || 0),
+        running: +e.duration < 0,
+        taskId: task?.id,
+        ref: task?.custom_id || task?.id,
+        name: task?.name || e.description || '',
+        url: e.task_url,
+      };
+    });
+    return { entries: entries.sort((a, b) => a.start - b.start), ...localTimes() };
+  } catch (e) {
+    return { error: clickupError(e), ...localTimes() };
+  }
+});
+
+// Temps pas encore dans ClickUp : propositions en attente de validation, et chrono des cartes qui
+// sont dans une colonne chronométrée d'un projet synchronisé
+function localTimes() {
+  const running = [];
+  const seen = new Set();
+  for (const p of syncPresets) {
+    if (!p.clickupSync?.enabled || !p.cwd || seen.has(projectKey(p.cwd))) continue;
+    seen.add(projectKey(p.cwd));
+    const cols = kbColumns(p);
+    for (const t of readKanban(p.cwd).tasks) {
+      if (!t?.clickup?.id || !t.timing?.startedAt || !cols.find((c) => c.id === kbStatus(t.status, cols))?.timer) continue;
+      running.push({ project: p.name, taskId: String(t.id), clickupId: t.clickup.id, ref: t.clickup.customId || t.clickup.id, name: t.title, start: Date.parse(t.timing.startedAt) });
+    }
+  }
+  return { running, pending: syncPending.map((p) => ({ id: p.id, clickupId: p.clickupId, ref: p.ref, name: p.title, start: p.start, duration: p.duration })) };
+}
 
 // Démarrage : config des presets, surveillance, et reprise de la file laissée par la session précédente
 function startClickupSync() {

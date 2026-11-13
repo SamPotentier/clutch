@@ -41,7 +41,7 @@
       </section>
       <div class="side-foot">
         <button id="btn-free" title="Cmd+T">Terminal libre</button>
-        <div class="hint">⌘K lancer · ⌘J skill · ⌘T nouveau · ⌘W fermer · ⌘L prompt · ⌘B kanban · ⌘I inbox · ⌘1-9 onglets</div>
+        <button type="button" id="btn-keys" class="hint" title="Tous les raccourcis clavier (⌘/)"><kbd>⌘K</kbd> pour tout lancer · raccourcis <kbd>⌘/</kbd></button>
       </div>
     </aside>
 
@@ -49,15 +49,11 @@
       <div id="tabbar">
         <div id="tabs"></div>
         <div id="usage" class="hidden" title="Utilisation de Claude — clique pour le détail"></div>
+        <button type="button" id="today" class="hidden"></button>
         <div class="tab-actions">
-          <button id="btn-diff" data-icon="diff" title="Afficher les modifications (⌘D)"></button>
-          <button id="btn-kanban" data-icon="kanban" title="Tableau des tâches du projet (⌘B)"></button>
-          <button id="btn-inbox" data-icon="inbox" title="Inbox ClickUp : tickets à trier (⌘I)"></button>
+          <button id="btn-side" data-icon="panel-right" title="Panneau de droite : modifications (⌘D), kanban (⌘B), inbox (⌘I), temps"></button>
           <button id="btn-layout" title="Basculer onglets / grille"></button>
-          <button id="btn-accounts" data-icon="user" title="Comptes Claude"></button>
-          <button id="btn-settings" data-icon="settings" title="Paramètres"></button>
-          <button id="btn-theme" data-icon="palette" title="Thème, fond et son"></button>
-          <div id="theme-pop" class="popover hidden"></div>
+          <button id="btn-settings" data-icon="settings" title="Paramètres : apparence, comptes Claude, ClickUp"></button>
           <button id="btn-rebuild" class="hidden" data-icon="restart" title="Mettre à jour Clutch">Mise à jour</button>
         </div>
       </div>
@@ -93,6 +89,7 @@
         <button data-side="diff" title="Modifications (⌘D)">Modifications<span id="side-diff-count"></span></button>
         <button data-side="kanban" title="Kanban (⌘B)">Kanban</button>
         <button data-side="inbox" title="Inbox ClickUp (⌘I)">Inbox<span id="side-inbox-count"></span></button>
+        <button data-side="times" title="Temps du jour et de la semaine">Temps<span id="side-times-count"></span></button>
       </div>
       <aside id="diff-panel" class="hidden">
         <div class="diff-head">
@@ -115,8 +112,8 @@
         <div class="diff-head">
           <div class="diff-title"><select id="kb-project" title="Projet"></select><button id="kb-add-btn" data-icon="plus" title="Ajouter une tâche ou un ticket ClickUp">Ticket</button><span id="kb-stats"></span></div>
           <div class="diff-tools">
-            <button id="kb-settings" data-icon="settings" title="Colonnes du tableau et statuts ClickUp reliés"></button>
-            <button id="kb-reload" data-icon="refresh" title="Relire le fichier"></button>
+            <button id="kb-wide" data-icon="expand" title="Agrandir le tableau sur la place des terminaux"></button>
+            <button id="kb-settings" data-icon="settings" title="Synchro ClickUp du projet (les colonnes se règlent en cliquant sur leur en-tête)"></button>
             <button id="kb-close" data-icon="x" title="Fermer (⌘B)"></button>
           </div>
         </div>
@@ -135,8 +132,25 @@
             <button id="ib-close" data-icon="x" title="Fermer (⌘I)"></button>
           </div>
         </div>
-        <div id="ib-list"></div>
+        <div id="ib-list" tabindex="0"></div>
+        <div id="ib-keys" class="hidden"></div>
         <div id="ib-foot" class="hidden"></div>
+      </aside>
+      <aside id="times-panel" class="hidden">
+        <div class="diff-head">
+          <div class="diff-title">
+            <span class="tm-nav"><button id="tm-prev" data-icon="chevron-left" title="Semaine précédente"></button><button id="tm-next" data-icon="chevron-right" title="Semaine suivante"></button></span>
+            <span id="tm-week"></span><span id="tm-stats"></span>
+          </div>
+          <div class="diff-tools">
+            <button id="tm-send-all" class="primary hidden" title="Créer dans ClickUp tous les temps à valider, avec la durée proposée"></button>
+            <button id="tm-today" class="hidden">Cette semaine</button>
+            <button id="tm-reload" data-icon="refresh" title="Recharger depuis ClickUp"></button>
+            <button id="tm-close" data-icon="x" title="Fermer"></button>
+          </div>
+        </div>
+        <div id="tm-list"></div>
+        <div id="tm-foot">Objectif <input id="tm-target" type="number" min="0.5" max="24" step="0.5"> h par jour, du lundi au vendredi · loggé dans ClickUp, à valider et chrono en cours</div>
       </aside>
       </div>
       </div>
@@ -145,15 +159,24 @@
 
   <div id="modal" class="overlay hidden">
     <form id="preset-form" class="dialog">
-      <h3 id="modal-title">Nouveau preset</h3>
-      <label>Nom<input name="name" required spellcheck="false"></label>
-      <label>Dossier
-        <div class="row">
-          <input name="cwd" required spellcheck="false" placeholder="~/Documents/projects/mon-projet">
-          <button type="button" id="btn-browse">Parcourir…</button>
-        </div>
-      </label>
-      <div class="launch">
+      <h3 id="modal-title">Nouveau projet</h3>
+      <div id="preset-tabs" class="seg">
+        <button type="button" data-tab="general">Général</button>
+        <button type="button" data-tab="launch">Lancement</button>
+        <button type="button" data-tab="clickup">ClickUp</button>
+      </div>
+      <div class="preset-pane" data-pane="general">
+        <label>Nom<input name="name" required spellcheck="false"></label>
+        <label>Dossier
+          <div class="row">
+            <input name="cwd" required spellcheck="false" placeholder="~/Documents/projects/mon-projet">
+            <button type="button" id="btn-browse">Parcourir…</button>
+          </div>
+        </label>
+        <label>Compte Claude<select name="account" id="preset-account"></select></label>
+        <label>Couleur<div id="color-picker" class="colors"></div></label>
+      </div>
+      <div class="preset-pane launch" data-pane="launch">
         <div class="launch-head">Au lancement <small>— ce qui s'ouvre quand tu cliques sur le projet</small></div>
         <div id="launch-panes"></div>
         <div class="launch-add">
@@ -170,24 +193,15 @@
           <button type="button" data-l="main-top" title="Le premier terminal en haut, les autres côte à côte en bas" data-icon="main-top">1 + rangée</button>
         </div>
       </div>
-      <div class="launch">
-        <div class="launch-head">Kanban <small>— colonnes du tableau, de gauche à droite, et statut ClickUp relié à chacune</small></div>
-        <div id="kb-cols"></div>
-        <div class="launch-add">
-          <button type="button" id="btn-add-col" data-icon="plus">Colonne</button>
-        </div>
-        <datalist id="cu-status-list"></datalist>
-      </div>
-      <div class="launch">
+      <div class="preset-pane launch" data-pane="clickup">
         <div class="launch-head">Synchro ClickUp <small>— une carte liée à un ticket qui avance d'une colonne le passe au statut relié</small></div>
         <label class="check"><input type="checkbox" name="cuEnabled"> Synchroniser le statut des tickets depuis le kanban</label>
         <div id="cu-sync-fields" class="cu-sync">
           <label class="check"><input type="checkbox" name="cuLogTime"> Proposer le temps passé dans les colonnes « chrono » (à partir d'1 min) : à corriger puis envoyer</label>
-          <div class="cu-check"><button type="button" id="btn-cu-check">Vérifier</button><span id="cu-check-result"></span></div>
+          <div class="cu-check"><button type="button" id="btn-cu-check">Vérifier les statuts dans ClickUp</button><span id="cu-check-result"></span></div>
         </div>
+        <div class="desc" id="cu-cols"></div>
       </div>
-      <label>Compte Claude<select name="account" id="preset-account"></select></label>
-      <label>Couleur<div id="color-picker" class="colors"></div></label>
       <div class="dialog-actions">
         <button type="button" id="btn-cancel">Annuler</button>
         <button type="submit" class="primary">Enregistrer</button>
@@ -203,10 +217,13 @@
         <div class="run-main">
           <div id="skill-run-desc" class="desc"></div>
           <label id="skill-run-skill-wrap" class="hidden">Skill<select id="skill-run-skill"></select></label>
-          <label>Projet<select name="preset" id="skill-run-preset"></select></label>
-          <div id="skill-run-fields"></div>
-          <label>Lancer dans<select name="target" id="skill-run-target"></select></label>
-          <label>Aperçu<pre id="skill-run-preview" class="preview"></pre></label>
+          <div id="skill-run-sum" class="hidden"></div>
+          <div id="skill-run-more">
+            <label>Projet<select name="preset" id="skill-run-preset"></select></label>
+            <div id="skill-run-fields"></div>
+            <label>Lancer dans<select name="target" id="skill-run-target"></select></label>
+            <label>Aperçu<pre id="skill-run-preview" class="preview"></pre></label>
+          </div>
         </div>
       </div>
       <div class="dialog-actions">
@@ -250,24 +267,26 @@
     </form>
   </div>
 
-  <div id="accounts" class="overlay hidden">
-    <div class="dialog wide">
-      <h3>Comptes Claude</h3>
-      <div class="desc">Chaque compte utilise son propre dossier de configuration (<code>CLAUDE_CONFIG_DIR</code>) : connexion, réglages et historique séparés. Le bouton tout en haut à gauche bascule d'un compte à l'autre : chaque compte a ses propres projets et onglets.</div>
-      <div id="account-list"></div>
-      <form id="account-form" class="account-add">
-        <input name="name" placeholder="Nom (ex. Perso)" required spellcheck="false">
-        <input name="dir" placeholder="~/.claude-perso" spellcheck="false">
-        <button type="submit">Ajouter</button>
-      </form>
-      <div class="dialog-actions"><button type="button" data-close>Fermer</button></div>
-    </div>
-  </div>
-
   <div id="settings" class="overlay hidden">
-    <form id="settings-form" class="dialog wide">
+    <div class="dialog wide">
       <h3>Paramètres</h3>
-      <div class="settings-sec">
+      <div id="settings-tabs" class="seg">
+        <button type="button" data-tab="look">Apparence</button>
+        <button type="button" data-tab="accounts">Comptes Claude</button>
+        <button type="button" data-tab="clickup">ClickUp</button>
+      </div>
+      <div id="theme-pop" class="settings-pane" data-pane="look"></div>
+      <div class="settings-pane settings-sec" data-pane="accounts">
+        <div class="desc">Chaque compte utilise son propre dossier de configuration (<code>CLAUDE_CONFIG_DIR</code>) : connexion, réglages et historique séparés. Le bouton tout en haut à gauche bascule d'un compte à l'autre : chaque compte a ses propres projets et onglets.</div>
+        <div id="account-list"></div>
+        <form id="account-form" class="account-add">
+          <input name="name" placeholder="Nom (ex. Perso)" required spellcheck="false">
+          <input name="dir" placeholder="~/.claude-perso" spellcheck="false">
+          <button type="submit">Ajouter</button>
+        </form>
+      </div>
+      <div class="settings-pane" data-pane="clickup">
+      <form id="settings-form" class="settings-sec">
         <div class="settings-head">ClickUp <span id="cu-status"></span></div>
         <div class="desc">Avec ta clé API, tape un numéro de ticket dans le kanban (<code>#86c0abc12</code>, <code>CICD-123</code> ou un lien ClickUp) : la carte est créée avec le titre, la description, le statut, les personnes assignées, l'échéance et les sous-tâches. Clé à créer dans ClickUp → Paramètres → Apps → API Token (<code>pk_…</code>). Elle est chiffrée dans le trousseau du Mac et reste sur cet ordinateur.</div>
         <div class="row">
@@ -275,7 +294,7 @@
           <button type="submit" class="primary">Enregistrer</button>
           <button type="button" id="cu-remove" class="danger hidden">Retirer</button>
         </div>
-      </div>
+      </form>
       <div class="settings-sec">
         <div class="settings-head">Inbox ClickUp <span id="ib-src-count"></span></div>
         <div class="desc">ClickUp ne partage pas son Inbox par l'API : l'onglet Inbox du panneau de droite liste les tickets ouverts des projets cochés ici, dans l'un des statuts à trier sans personne d'assigné ou assignés à toi, et ceux des statuts où tu es assigné. Cocher un espace ou un dossier inclut tout ce qu'il contient.</div>
@@ -283,8 +302,17 @@
         <label>Statuts où tu es assigné<input id="ib-mine-statuses" placeholder="dev en cours" spellcheck="false"></label>
         <div id="ib-tree"></div>
       </div>
+      </div>
       <div class="dialog-actions"><button type="button" data-close>Fermer</button></div>
-    </form>
+    </div>
+  </div>
+
+  <div id="keys" class="overlay hidden">
+    <div class="dialog">
+      <h3>Raccourcis clavier</h3>
+      <dl id="keys-list"></dl>
+      <div class="dialog-actions"><button type="button" data-close>Fermer</button></div>
+    </div>
   </div>
 
   <div id="toasts"></div>
@@ -305,5 +333,6 @@
   <script src="chat.js"></script>
   <script src="kanban.js"></script>
   <script src="inbox.js"></script>
+  <script src="times.js"></script>
 </body>
 </html>

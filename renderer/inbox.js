@@ -6,7 +6,8 @@
 
 const IB_REFRESH_MS = 5 * 60 * 1000;
 const IB_MAX_DISMISSED = 2000;
-const ib = { items: [], error: '', truncated: false, loading: false, at: 0, seq: 0, busy: new Set(), onBoard: new Set(), boardDir: '' };
+// sel : ticket sélectionné au clavier ; shown : tickets affichés, dans l'ordre de l'écran
+const ib = { items: [], error: '', truncated: false, loading: false, at: 0, seq: 0, busy: new Set(), onBoard: new Set(), boardDir: '', sel: null, shown: [] };
 
 const ibDismissed = () => new Set(state.inbox.dismissed);
 const ibRef = (it) => it.customId || it.id;
@@ -17,12 +18,16 @@ function setInboxOpen(open) {
     setDiffOpen(false);
   }
   if (open && state.kanban.open) setKanbanOpen(false);
+  if (open && state.times.open) setTimesOpen(false);
   state.inbox.open = open;
   $('#inbox-panel').classList.toggle('hidden', !open);
-  $('#btn-inbox').classList.toggle('on', open);
   updateSidePanel();
   persist();
-  if (open) loadInbox();
+  if (open) {
+    loadInbox();
+    // Le tri se fait au clavier : la liste prend le focus, Échap le rend au terminal
+    $('#ib-list').focus();
+  }
 }
 const toggleInbox = () => setInboxOpen(!state.inbox.open);
 
@@ -56,19 +61,18 @@ async function loadInbox(force) {
 
 function ibItem(it) {
   const color = /^#[0-9a-f]{3,8}$/i.test(it.statusColor || '') ? ` style="--st:${it.statusColor}"` : '';
-  const where = [it.folder, it.list].filter(Boolean).join(' › ');
   const busy = ib.busy.has(it.id);
   const first = kbCols()[0];
-  return `<div class="ib-item${busy ? ' busy' : ''}" data-id="${esc(it.id)}" title="Clic pour voir le ticket en entier">
+  return `<div class="ib-item${busy ? ' busy' : ''}${it.id === ib.sel ? ' sel' : ''}" data-id="${esc(it.id)}" title="Clic ou Espace pour voir le ticket en entier">
     <div class="kb-cu">
       <button type="button" data-a="open" title="Ouvrir dans ClickUp">${icon('link')}${esc(ibRef(it))}</button>
       <span class="ib-status"${color}>${esc(it.status || '')}</span>
-      <span title="${esc(where)}">${esc(where)}</span>
+      ${it.priority === 'urgent' || it.priority === 'high' ? `<span class="kb-flag ${it.priority}" title="Priorité">${KB_PRIORITY[it.priority]}</span>` : ''}
     </div>
     <div class="kb-title">${esc(it.name)}</div>
     <div class="kb-meta">
       <span class="kb-time" title="Modifié le ${esc(new Date(it.updated).toLocaleString())}${it.creator ? ` · créé par ${esc(it.creator)}` : ''}">${esc(kbAgo(new Date(it.updated).toISOString()))}</span>
-      <span class="ib-who">${it.mine ? 'assigné à toi' : 'personne'}${it.priority ? ` · ${esc(it.priority)}` : ''}</span>
+      <span class="ib-who">${it.mine ? 'assigné à toi' : 'personne'}</span>
       <span class="ib-actions">
         <button type="button" data-a="dismiss" title="Masquer ce ticket de l'inbox"${busy ? ' disabled' : ''}>Ignorer</button>
         <button type="button" class="primary" data-a="todo" title="M'assigner dans ClickUp${first.status ? `, passer le ticket en « ${esc(first.status)} »` : ''} et l'ajouter à « ${esc(first.label)} » du kanban"${busy || !ib.boardDir ? ' disabled' : ''}>${busy ? icon('spinner', 'ib-spin') : icon('plus')}${esc(first.label)}</button>
@@ -81,6 +85,14 @@ function renderInbox() {
   const list = $('#ib-list');
   const dismissed = ibDismissed();
   const shown = ib.items.filter((it) => !dismissed.has(it.id) && !ib.onBoard.has(it.id));
+  // Groupés par liste ClickUp, la liste du ticket le plus récent en premier
+  const groups = new Map();
+  for (const it of shown) {
+    const where = [it.folder, it.list].filter(Boolean).join(' › ') || 'Sans liste';
+    groups.set(where, [...(groups.get(where) || []), it]);
+  }
+  ib.shown = [...groups.values()].flat();
+  if (!ib.shown.some((it) => it.id === ib.sel)) ib.sel = ib.shown[0]?.id || null;
   const hidden = ib.items.filter((it) => dismissed.has(it.id)).length;
   $('#side-inbox-count').textContent = shown.length || '';
   $('#ib-stats').textContent = ib.loading ? 'chargement…' : ib.at ? `${shown.length} à trier` : '';
@@ -92,7 +104,7 @@ function renderInbox() {
     hidden && `${hidden} ignoré${hidden > 1 ? 's' : ''} · <button type="button" data-a="restore">Tout rétablir</button>`,
   ].filter(Boolean).map((x) => `<div>${x}</div>`).join('');
   if (!state.inbox.sources.length) {
-    list.innerHTML = '<div class="diff-empty">Choisis les projets ClickUp à suivre dans les paramètres (⚙ → Inbox ClickUp).<br><button type="button" data-a="settings">Ouvrir les paramètres</button></div>';
+    list.innerHTML = '<div class="diff-empty">Choisis les projets ClickUp à suivre dans les paramètres (⚙ → ClickUp → Inbox ClickUp).<br><button type="button" data-a="settings">Ouvrir les paramètres</button></div>';
   } else if (ib.error) {
     list.innerHTML = `<div id="ib-error">${esc(ib.error)}</div>`;
   } else if (!ib.at) {
@@ -100,15 +112,38 @@ function renderInbox() {
   } else if (!shown.length) {
     list.innerHTML = '<div class="diff-empty">Rien à trier.</div>';
   } else {
-    list.innerHTML = shown.map(ibItem).join('');
+    list.innerHTML = [...groups].map(([where, items]) => `<div class="ib-group">${esc(where)}<span>${items.length}</span></div>${items.map(ibItem).join('')}`).join('');
+    list.querySelector('.ib-item.sel')?.scrollIntoView({ block: 'nearest' });
   }
+  const first = kbCols()[0];
+  $('#ib-keys').classList.toggle('hidden', !shown.length || !!ib.error);
+  $('#ib-keys').innerHTML = `<kbd>J</kbd><kbd>K</kbd> naviguer <kbd>↵</kbd> ${esc(first.label)} <kbd>E</kbd> ignorer <kbd>Espace</kbd> détail <kbd>Z</kbd> annuler`;
 }
 
 function ibDismiss(ids) {
   const kept = state.inbox.dismissed.filter((x) => !ids.includes(x));
   state.inbox.dismissed = [...kept, ...ids].slice(-IB_MAX_DISMISSED);
+  ib.lastDismissed = ids;
+  ibSelectNear(ids[0]);
   persist();
   renderInbox();
+  const names = ids.map((id) => { const it = ib.items.find((x) => x.id === id); return it ? ibRef(it) : id; }).join(', ');
+  toast(`${names} ignoré`, '', { label: 'Annuler', run: ibUndoDismiss });
+}
+// Annule le dernier « Ignorer » seulement, sans faire revenir tous les tickets masqués
+function ibUndoDismiss() {
+  const ids = ib.lastDismissed;
+  if (!ids?.length) return;
+  ib.lastDismissed = null;
+  state.inbox.dismissed = state.inbox.dismissed.filter((x) => !ids.includes(x));
+  ib.sel = ids[0];
+  persist();
+  renderInbox();
+}
+// Le ticket traité sort de la liste : la sélection passe au suivant, sinon au précédent
+function ibSelectNear(id) {
+  const i = ib.shown.findIndex((it) => it.id === id);
+  if (i >= 0 && ib.sel === id) ib.sel = (ib.shown[i + 1] || ib.shown[i - 1])?.id || null;
 }
 
 async function ibToTodo(it) {
@@ -142,6 +177,7 @@ async function ibToTodo(it) {
     await api.kanbanWrite(dir, board.tasks);
   }
   ib.busy.delete(it.id);
+  ibSelectNear(it.id);
   if (dir === ib.boardDir) ib.onBoard.add(it.id);
   renderInbox();
   const where = preset?.name || shortPath(dir);
@@ -173,17 +209,42 @@ $('#ticket-view').addEventListener('click', (e) => {
   closeOverlay($('#ticket-view'));
   if (a === 'dismiss') ibDismiss([it.id]);
   else if (a === 'todo') ibToTodo(it);
+  if (state.inbox.open) $('#ib-list').focus();
+});
+
+// Tri au clavier, liste active : J/K ou flèches, Entrée met dans la première colonne, E ignore
+$('#ib-list').addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target !== e.currentTarget) return;
+  const k = e.key.toLowerCase();
+  const i = ib.shown.findIndex((it) => it.id === ib.sel);
+  const it = ib.shown[i];
+  if (k === 'j' || k === 'arrowdown' || k === 'k' || k === 'arrowup') {
+    const next = ib.shown[i + (k === 'j' || k === 'arrowdown' ? 1 : -1)];
+    if (next) ib.sel = next.id;
+    renderInbox();
+  } else if (k === 'z') ibUndoDismiss();
+  else if (k === 'escape') focusActive();
+  else if (!it || ib.busy.has(it.id)) return;
+  else if (k === 'enter') ibToTodo(it);
+  else if (k === 'e') ibDismiss([it.id]);
+  else if (k === ' ') ibView(it);
+  else return;
+  e.preventDefault();
+  e.stopPropagation();
 });
 
 $('#inbox-panel').addEventListener('click', (e) => {
   const b = e.target.closest('[data-a]');
   if (!b) {
     const it = ib.items.find((x) => x.id === e.target.closest('.ib-item')?.dataset.id);
-    if (it && !ib.busy.has(it.id)) ibView(it);
+    if (!it) return;
+    ib.sel = it.id;
+    renderInbox();
+    if (!ib.busy.has(it.id)) ibView(it);
     return;
   }
   const a = b.dataset.a;
-  if (a === 'settings') return openSettings();
+  if (a === 'settings') return openSettings('clickup');
   if (a === 'restore') {
     const ids = new Set(ib.items.map((it) => it.id));
     state.inbox.dismissed = state.inbox.dismissed.filter((x) => !ids.has(x));
@@ -202,7 +263,6 @@ $('#ib-project').onchange = (e) => {
   persist();
   loadInbox();
 };
-$('#btn-inbox').onclick = toggleInbox;
 $('#ib-close').onclick = toggleInbox;
 $('#ib-reload').onclick = () => loadInbox(true);
 
@@ -292,4 +352,6 @@ for (const [sel, key, fallback] of [['#ib-statuses', 'statuses', ['nouveau', 'à
 function initInbox() {
   if (state.inbox.open && !state.kanban.open && !state.diff.open) setInboxOpen(true);
   setInterval(() => { if (state.inbox.open) loadInbox(); }, 60000);
+  // Au retour sur l'app : relecture (ClickUp seulement si la dernière a plus de 5 min)
+  window.addEventListener('focus', () => { if (state.inbox.open) loadInbox(); });
 }
