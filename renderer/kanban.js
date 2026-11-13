@@ -6,9 +6,9 @@ const KB_COLS = [
   { id: 'todo', label: 'À faire' },
   { id: 'in_progress', label: 'En cours' },
   { id: 'review', label: 'À relire' },
-  { id: 'done', label: 'Fait' },
 ];
-// Statuts tolérés à la lecture (écrits à la main ou par Claude), ramenés aux quatre colonnes
+// Statuts tolérés à la lecture (écrits à la main ou par Claude), ramenés à la forme canonique.
+// « done » n'a pas de colonne : la tâche reste dans le fichier mais n'est plus affichée.
 const KB_ALIASES = { todo: 'todo', afaire: 'todo', backlog: 'todo', inprogress: 'in_progress', doing: 'in_progress', encours: 'in_progress', wip: 'in_progress', review: 'review', toreview: 'review', inreview: 'review', arelire: 'review', done: 'done', fait: 'done', termine: 'done' };
 const kbStatus = (s) => KB_ALIASES[String(s || '').normalize('NFD').replace(/[^a-z]/gi, '').toLowerCase()] || 'todo';
 
@@ -198,7 +198,7 @@ function renderKanban() {
   const err = $('#kb-error');
   err.classList.toggle('hidden', !kb.error);
   err.textContent = kb.error ? `.clutch/kanban.json est illisible (${kb.error}). Le tableau est en lecture seule tant que le fichier n'est pas corrigé.` : '';
-  const n = kb.tasks.length;
+  const n = kb.tasks.filter((t) => t.status !== 'done').length;
   $('#kb-stats').textContent = kb.dir ? `${n} tâche${n > 1 ? 's' : ''}` : '';
   $('#kb-stats').title = kb.dir ? `${shortPath(kb.dir)}/.clutch/kanban.json` : '';
   if (!kb.dir) {

@@ -26,7 +26,7 @@ Un développeur qui travaille avec Claude Code jongle avec plusieurs projets (so
 | Voir ce que Claude a changé | Onglet **Modifications** du panneau de droite (partagé avec le kanban et l'inbox, un seul visible à la fois), en direct, depuis l'ouverture de l'onglet ou depuis le dernier commit. |
 | Relancer les prompts et skills habituels | **Barre de prompt** (vers le terminal actif ou tous), **prompts enregistrés**, **skills** Claude Code listés et lancés via un formulaire avec aperçu. |
 | Séparer pro et perso | **Espaces par compte Claude** : chaque compte a ses projets, onglets, skills et historique. |
-| Suivre les tâches et les relier à Claude | **Kanban par projet** (À faire, En cours, À relire, Fait), tickets **ClickUp** importés par leur numéro, lancement d'un skill sur une carte, mise à jour du tableau par un skill Claude. |
+| Suivre les tâches et les relier à Claude | **Kanban par projet** (À faire, En cours, À relire), tickets **ClickUp** importés par leur numéro, lancement d'un skill sur une carte, mise à jour du tableau par un skill Claude. |
 | Trier les nouveaux tickets | **Inbox ClickUp** : tickets à trier des projets ClickUp choisis dans les paramètres ; « Ignorer » ou « À faire » (assignation et statut « à faire » dans ClickUp + carte dans le kanban). |
 | Tenir ClickUp à jour sans y penser | **Synchro ClickUp** (par projet, désactivée par défaut) : quand une carte liée passe en « En cours » puis en « À relire », le ticket avance (« dev en cours », puis « revue de code à faire ») et le temps passé en « En cours » est proposé dans une fenêtre : on le corrige, puis on l'envoie sur le ticket. |
 | Surveiller sa consommation | **Jauge d'utilisation** du forfait Claude (session de 5 h et semaine). |
@@ -175,7 +175,7 @@ docs/CLUTCH.md       Ce document
 - `clickup.teamId` et `clickup.listId` sont stockés à l'import ; pour une carte plus ancienne, ils sont récupérés à la première synchro et sauvegardés. `timing` n'existe que pour les cartes synchronisées ; il est écrit uniquement par le processus principal.
 - **Écriture** : fichier temporaire puis `rename`, pour qu'un lecteur ne voie jamais un fichier à moitié écrit.
 - **Lecture en direct** : `fs.watchFile`, qui vérifie le fichier toutes les 700 ms. Ce mode fonctionne même si le fichier n'existe pas encore ou s'il est remplacé d'un bloc, comme le fait l'outil d'écriture de Claude.
-- **Tolérance** : les statuts sont ramenés aux quatre colonnes (`doing`, `to review`, `en cours`, `fait`…). Une tâche sans `id` ou sans `title` est ignorée. Les champs inconnus sont conservés.
+- **Tolérance** : les statuts sont ramenés à leur forme canonique (`doing`, `to review`, `en cours`, `fait`…). Une tâche en `done` n'a pas de colonne : elle reste dans le fichier sans être affichée. Une tâche sans `id` ou sans `title` est ignorée. Les champs inconnus sont conservés.
 - **JSON invalide** : le tableau passe en lecture seule, affiche l'erreur et n'écrase rien.
 - Les cartes changées depuis l'extérieur sont repérées en comparant les statuts avec la lecture précédente, puis mises en évidence 2 s.
 - Une saisie en cours (nouvelle tâche, modification) survit aux rafraîchissements.
@@ -203,7 +203,7 @@ Un preset sans synchro reste enregistré sans cette clé, et rien ne change pour
 - au premier chargement d'un projet, la table est remplie sans rien déclencher ;
 - la table est mise à jour avant tout appel réseau : l'écriture de l'interface relue ensuite par `watchFile` ne voit plus de différence, une transition ne part donc qu'une fois ;
 - tous les projets dont la synchro est activée sont surveillés, que leur panneau soit ouvert ou non ;
-- les statuts écrits avec des variantes (`doing`, `en cours`…) sont ramenés aux quatre colonnes avant comparaison.
+- les statuts écrits avec des variantes (`doing`, `en cours`…) sont ramenés à leur forme canonique avant comparaison.
 
 **Règles** (uniquement pour les cartes qui ont `clickup.id`) :
 
