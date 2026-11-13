@@ -97,8 +97,9 @@ const state = { theme: 'nuit', accounts: [], account: '', defaultName: 'Pro', la
   diff: { open: false, scope: 'session', auto: true, width: 560, collapsed: new Set() },
   bg: { kind: '', color: '#1e2a44', image: '', imageName: '', opacity: 78, blur: 0 },
   sound: { name: 'carillon', volume: 60 },
+  // view : 'list' (une colonne à la fois, par défaut) ou 'board' ; col : colonne affichée en liste ;
   // only : projet auquel le tableau est filtré ; columns : colonnes communes à tous les projets
-  kanban: { open: false, width: 640, only: '', columns: null }, side: { width: 640 },
+  kanban: { open: false, width: 640, view: 'list', col: '', only: '', columns: null }, side: { width: 640 },
   // routes : projet où ranger les tickets de chaque liste ClickUp (id de liste → id de projet)
   inbox: { open: false, statuses: ['nouveau', 'à faire', 'rejeté'], mineStatuses: ['dev en cours'], sources: [], dismissed: [], routes: {} },
   times: { open: false, target: 7 },
@@ -113,7 +114,7 @@ function persist() {
     skillConfigs: state.skillConfigs, customSkills: state.customSkills, bg: state.bg, sound: state.sound,
     diff: { scope: state.diff.scope, auto: state.diff.auto },
     side: { width: state.side.width, last: state.side.last },
-    kanban: { open: state.kanban.open, only: state.kanban.only, columns: state.kanban.columns, lastSkill: state.kanban.lastSkill },
+    kanban: { open: state.kanban.open, view: state.kanban.view, col: state.kanban.col, only: state.kanban.only, columns: state.kanban.columns, lastSkill: state.kanban.lastSkill },
     inbox: { open: state.inbox.open, statuses: state.inbox.statuses, mineStatuses: state.inbox.mineStatuses, sources: state.inbox.sources, dismissed: state.inbox.dismissed, routes: state.inbox.routes },
     times: { open: state.times.open, target: state.times.target },
     features: state.features,
@@ -1442,7 +1443,7 @@ function updateSidePanel() {
   $('#side-panel').classList.toggle('hidden', !open);
   $('#side-resizer').classList.toggle('hidden', !open);
   // Tableau agrandi : il ne laisse aux terminaux que le minimum, le temps d'une réorganisation
-  const wide = state.side.wide && state.kanban.open;
+  const wide = state.side.wide && state.kanban.open && state.kanban.view === 'board';
   $('#side-panel').style.width = (wide ? Math.max(state.side.width, $('#workspace').offsetWidth - 320) : state.side.width) + 'px';
   document.querySelectorAll('#side-tabs button').forEach((b) => b.classList.toggle('on', state[b.dataset.side].open));
   $('#btn-side').classList.toggle('on', open);
@@ -1643,7 +1644,7 @@ const KEYS = [
   ['⌘K', 'Lancer un projet, aller à un onglet, changer de thème'], ['⌘J', 'Lancer un skill sur le projet actif'], ['⌘L', 'Écrire un prompt'],
   ['⌘T', 'Nouveau terminal'], ['⌘W', 'Fermer l\'onglet'], ['⌘1-9', 'Aller à un onglet'], ['⌘G', 'Onglets ou grille'],
   ['⌘D', 'Modifications'], ['⌘B', 'Kanban', 'kanban'], ['⌘I', 'Inbox ClickUp', 'inbox'],
-  ['Kanban', 'Tab pour atteindre une carte, ← → pour la changer de colonne, ↵ pour l\'ouvrir, clic droit pour la déplacer ou la changer de projet', 'kanban'],
+  ['Kanban', 'Tab pour atteindre une carte, ↵ pour l\'ouvrir, clic droit pour la déplacer ou la changer de projet. En liste : ← → changent de colonne, J K naviguent, M fait avancer la carte. En tableau : ← → changent la carte de colonne', 'kanban'],
   ['Inbox', 'J K pour naviguer, ↵ pour prendre le ticket, E pour l\'ignorer, Espace pour le détail, Z pour annuler', 'inbox'],
 ];
 // Le troisième élément est la fonction facultative dont dépend le raccourci

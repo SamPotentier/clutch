@@ -3,8 +3,11 @@
 // n'en montre qu'un. Les tâches restent dans <projet>/.clutch/kanban.json : l'app les affiche et les
 // édite, un skill Claude peut les faire avancer en modifiant le fichier de son projet, surveillé en direct.
 
+// Deux affichages (kanban.view) : en liste, par défaut, une colonne à la fois, choisie en haut ; en
+// tableau, toutes les colonnes côte à côte.
+
 // Les colonnes sont communes à tous les projets et se règlent sur le tableau : un clic sur l'en-tête
-// d'une colonne ouvre ses réglages (kanban-cols.js pour les règles).
+// d'une colonne (en liste, la roue à côté des colonnes) ouvre ses réglages (kanban-cols.js pour les règles).
 
 // boards : un par dossier de projet, { dir, preset, tasks, error, errorLine, loaded, seen } ; home : projet de chaque tâche ;
 // editing, drag, diverge, focus : carte concernée, par sa clé (kbKey) ; colEdit : colonne dont les réglages sont ouverts ;
@@ -32,6 +35,9 @@ const kbByKey = (key) => kbTasks().find((t) => kbKey(t) === key);
 const kbCardTask = (el) => kbBoard(el?.dataset.dir)?.tasks.find((t) => t.id === el.dataset.id);
 // Projets affichés : tous, ou celui du filtre
 const kbShown = () => kb.boards.filter((b) => !state.kanban.only || b.preset.id === state.kanban.only);
+const kbIsList = () => state.kanban.view !== 'board';
+// Colonne affichée en liste : celle choisie, sinon la première
+const kbListCol = (cols) => cols.find((c) => c.id === state.kanban.col) || cols[0];
 
 const kbDur = (ms) => {
   const min = Math.round(ms / 60000);
@@ -180,6 +186,67 @@ function kbHeadLine(t, proj) {
   const err = cu && kb.unsynced.get(kbKey(t));
   const who = (cu?.assignees || []).slice(0, 3).map((n) => `<i class="kb-who" title="${esc(n)}">${esc(String(n).trim()[0]?.toUpperCase() || '?')}</i>`).join('');
   return `<div class="kb-cu">${proj}${cu ? `<button type="button" data-a="cu-open" title="Ouvrir dans ClickUp">${icon('link')}${esc(cu.customId || cu.id)}</button>` : ''}${err ? `<em class="kb-unsynced" title="${esc(err)}">non synchronisé</em>` : ''}${who ? `<span class="kb-whos">${who}</span>` : ''}</div>`;
+}
+
+// Une carte en vue liste : le titre, puis ce que la carte du tableau montre, sur une ligne ; next est
+// la colonne suivante, où le bouton de droite l'envoie
+function kbRow(t, multi, next) {
+  const home = kbHome(t);
+  const key = kbKey(t);
+  if (kb.editing?.key === key) return kbCard(t, multi);
+  const cu = t.clickup;
+  const err = cu && kb.unsynced.get(key);
+  const flash = Date.now() - (kb.flash.get(key) || 0) < 2500 ? ' flash' : '';
+  const who = (cu?.assignees || []).slice(0, 3).map((n) => `<i class="kb-who" title="${esc(n)}">${esc(String(n).trim()[0]?.toUpperCase() || '?')}</i>`).join('');
+  return `<div class="kb-card kb-row${flash}${home.error ? ' ro' : ''}" draggable="${!home.error}" tabindex="0" data-id="${esc(t.id)}" data-dir="${esc(home.dir)}" title="Clic ou Entrée : voir la tâche et lancer un skill · glisser sur une colonne ou clic droit : déplacer, changer de projet">
+    ${multi ? `<span class="kb-row-dot" style="background:${home.preset.color || 'var(--faint)'}"></span>` : ''}
+    <div class="kb-row-main">
+      <div class="kb-title">${esc(t.title)}</div>
+      ${kb.diverge === key ? kbDivergePanel(t) : ''}
+      <div class="kb-meta">
+        ${multi ? `<span class="kb-row-proj" title="${esc(shortPath(home.dir))}">${esc(home.preset.name)}</span>` : ''}
+        ${cu ? `<span class="kb-cu"><button type="button" data-a="cu-open" title="Ouvrir dans ClickUp">${icon('link')}${esc(cu.customId || cu.id)}</button></span>` : ''}
+        ${err ? `<em class="kb-unsynced" title="${esc(err)}">non synchronisé</em>` : ''}
+        ${cu ? kbStatusChip(t) + kbFlags(cu) : ''}
+        ${kbTiming(t)}
+        <span class="kb-time" title="${esc(t.updated || '')}">${esc(kbAgo(t.updated || t.created))}</span>
+        <span class="kb-tools">
+          ${cu ? `<button type="button" data-a="cu-refresh" title="Recharger depuis ClickUp">${icon('refresh')}</button>` : ''}
+          <button type="button" data-a="send" title="Envoyer la tâche au terminal actif">${icon('send')}</button>
+          <button type="button" data-a="edit" title="Modifier">${icon('pencil')}</button>
+          <button type="button" data-a="del" title="Supprimer">${icon('trash')}</button>
+        </span>
+      </div>
+    </div>
+    ${who ? `<span class="kb-whos">${who}</span>` : ''}
+    ${next && !home.error ? `<button type="button" class="kb-next" data-a="advance" title="Déplacer vers « ${esc(next.label)} » (M)">${icon('arrow-right')}${esc(next.label)}</button>` : ''}
+  </div>`;
+}
+
+// Vue liste : les colonnes en onglets avec leur nombre de cartes, puis les cartes de celle qui est choisie
+function kbListView(cols, tasks, multi) {
+  const cur = kbListCol(cols);
+  const i = cols.indexOf(cur);
+  const rows = tasks.filter((t) => t.status === cur.id);
+  return `<div class="kb-listhead" data-status="${esc(cur.id)}">
+      <div class="kb-listbar">
+        <div class="kb-tabs" role="tablist" aria-label="Colonne affichée">${cols.map((c) => `<button type="button" role="tab" data-a="tab" data-col="${esc(c.id)}" aria-selected="${c === cur}" class="${c === cur ? 'on' : ''}${c.timer ? ' timed' : ''}" title="${c.status ? `Statut ClickUp relié : ${esc(c.status)} · ` : ''}glisse une carte ici pour l'y déplacer">${esc(c.label)}<span>${tasks.filter((t) => t.status === c.id).length}</span></button>`).join('')}</div>
+        <button type="button" class="kb-tab-tool${kb.colEdit === cur.id ? ' on' : ''}" data-a="col" title="Régler la colonne « ${esc(cur.label)} » : nom, statut ClickUp relié, chrono, place" aria-label="Régler la colonne">${icon('settings')}</button>
+        <button type="button" class="kb-tab-tool" data-a="col-add" title="Ajouter une colonne" aria-label="Ajouter une colonne">${icon('plus')}</button>
+      </div>
+      ${kb.colEdit === cur.id ? kbColSettings(cur, i, cols) : ''}
+    </div>
+    <div class="kb-rows" data-status="${esc(cur.id)}">${rows.map((t) => kbRow(t, multi, cols[i + 1])).join('') || `<div class="diff-empty">Aucune carte dans « ${esc(cur.label)} ».</div>`}</div>`;
+}
+
+// Change la colonne affichée en liste ; focus : 'tab' pour rester sur les onglets, 'card' pour aller à la première carte
+function kbPickCol(id, focus) {
+  state.kanban.col = id;
+  if (kb.colEdit) kb.colEdit = null;
+  persist();
+  renderKanban();
+  if (focus === 'tab') $('#kb-board .kb-tabs .on')?.focus();
+  else if (focus === 'card') ($('#kb-board .kb-row') || $('#kb-board .kb-tabs .on'))?.focus();
 }
 
 // Statut ClickUp en pastille, en tête des étiquettes de la carte (la ligne passe à la suite s'il est long)
@@ -363,6 +430,7 @@ function renderKanban() {
   $('#kb-stats').title = shown.map((b) => `${shortPath(b.dir)}/.clutch/kanban.json`).join('\n');
   $('#kb-wide').classList.toggle('on', !!state.side.wide);
   renderKbFilter();
+  $('#kb-keys').classList.add('hidden');
   const writable = kb.boards.some((b) => !b.error);
   $('#kb-add-btn').classList.toggle('hidden', !writable);
   if (!writable) kbCloseAdd();
@@ -379,8 +447,14 @@ function renderKanban() {
   kb.focus = null;
   if (!cols.some((c) => c.id === kb.colEdit)) kb.colEdit = null;
   const multi = shown.length > 1;
+  const list = kbIsList();
+  board.classList.toggle('list', list);
+  document.querySelectorAll('#kb-view button').forEach((b) => b.classList.toggle('on', (b.dataset.view === 'list') === list));
+  // Agrandir sur la place des terminaux ne sert qu'au tableau
+  $('#kb-wide').classList.toggle('hidden', list);
+  $('#kb-keys').classList.toggle('hidden', !list);
   // Dans une colonne, les cartes d'un même projet se suivent, dans l'ordre de son fichier
-  board.innerHTML = cols.map((c, i) => {
+  board.innerHTML = list ? kbListView(cols, tasks, multi) : cols.map((c, i) => {
     const cards = tasks.filter((t) => t.status === c.id);
     return `<section class="kb-col${c.timer ? ' timed' : ''}" data-status="${esc(c.id)}">
       <header><button type="button" class="kb-col-name" data-a="col" title="${c.status ? `Statut ClickUp relié : ${esc(c.status)} · ` : ''}clic pour régler la colonne (Échap ou nouveau clic pour refermer)"><span class="kb-dot"></span>${esc(c.label)}</button><span class="kb-count">${cards.length}</span></header>
@@ -440,6 +514,7 @@ function kbColAction(a, id) {
   if (a === 'col-add') {
     const fresh = { id: kbNewColId('Nouvelle colonne', cols.map((c) => c.id)), label: 'Nouvelle colonne', status: '', timer: false };
     Object.assign(kb, { colEdit: fresh.id, colFresh: fresh.id, colFocus: true });
+    state.kanban.col = fresh.id;
     kbLoadCuStatuses();
     return kbSetCols([...cols, fresh]);
   }
@@ -483,6 +558,7 @@ $('#kb-board').addEventListener('change', (e) => {
     if (kb.colFresh === id && !kbTasks().some((t) => t.status === id)) {
       c.id = kbNewColId(label, cols.filter((x) => x !== c).map((x) => x.id));
       kb.colEdit = c.id;
+      if (state.kanban.col === id) state.kanban.col = c.id;
     }
     kb.colFresh = null;
   }
@@ -734,7 +810,8 @@ $('#kb-filter').addEventListener('click', (e) => {
 
 $('#kb-board').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-a]');
-  if (btn?.dataset.a.startsWith('col')) return kbColAction(btn.dataset.a, btn.closest('.kb-col')?.dataset.status);
+  if (btn?.dataset.a === 'tab') return kbPickCol(btn.dataset.col, 'tab');
+  if (btn?.dataset.a.startsWith('col')) return kbColAction(btn.dataset.a, btn.closest('[data-status]')?.dataset.status);
   const card = e.target.closest('.kb-card');
   const t = card && kbCardTask(card);
   if (!t) return;
@@ -746,6 +823,7 @@ $('#kb-board').addEventListener('click', (e) => {
   }
   const a = btn.dataset.a;
   if (a === 'send') kbSend(t);
+  else if (a === 'advance') kbAdvance(t);
   else if (a === 'cu-open') window.open(t.clickup.url || `https://app.clickup.com/t/${t.clickup.id}`);
   else if (a === 'cu-refresh') kbRefreshTicket(t);
   else if (a === 'edit') kbStartEdit(t);
@@ -770,7 +848,22 @@ $('#kb-board').addEventListener('input', (e) => {
   if (e.target.classList.contains('kb-e-title')) kb.editing.title = e.target.value;
   if (e.target.classList.contains('kb-e-desc')) kb.editing.description = e.target.value;
 });
-// Carte active au clavier : Entrée l'ouvre, ← → la changent de colonne, ↑ ↓ passent à la voisine
+// La carte passe dans la colonne suivante ; en liste elle quitte l'écran, la voisine prend le focus
+function kbAdvance(t) {
+  const cols = kbCols();
+  const next = cols[cols.findIndex((c) => c.id === t.status) + 1];
+  if (!next || kbHome(t).error) return;
+  const cards = [...document.querySelectorAll('#kb-board .kb-row')];
+  const at = cards.findIndex((c) => kbElKey(c) === kbKey(t));
+  const near = cards[at + 1] || cards[at - 1];
+  if (near && document.activeElement === cards[at]) kb.focus = kbElKey(near);
+  kbMoveCard(t, next.id);
+  // Dernière carte de la colonne : le focus revient aux onglets plutôt que de se perdre
+  if (!near && kbIsList()) $('#kb-board .kb-tabs .on')?.focus();
+}
+
+// Carte active au clavier : Entrée l'ouvre, ↑ ↓ (ou J K) passent à la voisine. En tableau, ← → la changent
+// de colonne ; en liste, ← → changent la colonne affichée et M fait avancer la carte
 $('#kb-board').addEventListener('keydown', (e) => {
   const card = e.target;
   if (!card.classList?.contains('kb-card') || card.classList.contains('editing') || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -778,17 +871,35 @@ $('#kb-board').addEventListener('keydown', (e) => {
   if (!t) return;
   const cols = kbCols();
   const i = cols.findIndex((c) => c.id === t.status);
-  if (e.key === 'Enter') openTaskRun(t, kbHome(t).preset.id);
-  else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !kbHome(t).error) {
-    const to = cols[i + (e.key === 'ArrowLeft' ? -1 : 1)];
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  const side = k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0;
+  if (k === 'Enter') openTaskRun(t, kbHome(t).preset.id);
+  else if (side && kbIsList()) {
+    if (cols[i + side]) kbPickCol(cols[i + side].id, 'card');
+  } else if (side && !kbHome(t).error) {
+    const to = cols[i + side];
     if (to) {
       kb.focus = kbKey(t);
       kbMoveCard(t, to.id);
     }
-  } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+  } else if (k === 'm' && kbIsList()) kbAdvance(t);
+  else if (k === 'ArrowUp' || k === 'ArrowDown' || k === 'j' || k === 'k') {
     const cards = [...card.parentElement.querySelectorAll('.kb-card')];
-    cards[cards.indexOf(card) + (e.key === 'ArrowUp' ? -1 : 1)]?.focus();
+    cards[cards.indexOf(card) + (k === 'ArrowUp' || k === 'k' ? -1 : 1)]?.focus();
   } else return;
+  e.preventDefault();
+  e.stopPropagation();
+});
+// Onglets des colonnes (vue liste) : ← → passent à la colonne voisine, ↓ descend dans ses cartes
+$('#kb-board').addEventListener('keydown', (e) => {
+  const tab = e.target.closest?.('.kb-tabs [data-col]');
+  if (!tab || e.metaKey || e.ctrlKey || e.altKey) return;
+  const cols = kbCols();
+  const i = cols.findIndex((c) => c.id === tab.dataset.col);
+  const to = cols[i + (e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0)];
+  if (e.key === 'ArrowDown') $('#kb-board .kb-row')?.focus();
+  else if (to && to !== cols[i]) kbPickCol(to.id, 'tab');
+  else return;
   e.preventDefault();
   e.stopPropagation();
 });
@@ -828,15 +939,18 @@ function kbSyncOffHint(p) {
   toast(`Synchro ClickUp désactivée pour ${p.name} : le ticket ne change pas dans ClickUp. Active-la dans Modifier le projet → Synchro ClickUp.`, 'err');
 }
 
-/* Glisser-déposer : changer de colonne, ou d'ordre dans la colonne */
-const kbClearDrop = () => document.querySelectorAll('.kb-drop-before, .kb-drop-end').forEach((x) => x.classList.remove('kb-drop-before', 'kb-drop-end'));
+/* Glisser-déposer : changer de colonne, ou d'ordre dans la colonne. En liste, une carte se dépose sur
+   l'onglet d'une colonne pour y aller. */
+const kbClearDrop = () => document.querySelectorAll('.kb-drop-before, .kb-drop-end, .kb-drop-tab').forEach((x) => x.classList.remove('kb-drop-before', 'kb-drop-end', 'kb-drop-tab'));
 
 function kbDropSpot(e) {
-  const col = e.target.closest('.kb-col');
+  const tab = e.target.closest('.kb-tabs [data-col]');
+  if (tab) return { tab, status: tab.dataset.col };
+  const col = e.target.closest('.kb-col, .kb-rows');
   if (!col) return null;
   const cards = [...col.querySelectorAll('.kb-card:not(.dragging)')];
   const before = cards.find((c) => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
-  return { col, before };
+  return { col, before, status: col.dataset.status };
 }
 
 $('#kb-board').addEventListener('dragstart', (e) => {
@@ -858,7 +972,8 @@ $('#kb-board').addEventListener('dragover', (e) => {
   if (!spot) return;
   e.preventDefault();
   kbClearDrop();
-  if (spot.before) spot.before.classList.add('kb-drop-before');
+  if (spot.tab) spot.tab.classList.add('kb-drop-tab');
+  else if (spot.before) spot.before.classList.add('kb-drop-before');
   else spot.col.classList.add('kb-drop-end');
 });
 $('#kb-board').addEventListener('drop', (e) => {
@@ -866,10 +981,19 @@ $('#kb-board').addEventListener('drop', (e) => {
   const t = spot && kbByKey(kb.drag);
   if (!t) return;
   e.preventDefault();
-  kbMoveCard(t, spot.col.dataset.status, spot.before && kbCardTask(spot.before));
+  kbMoveCard(t, spot.status, spot.before && kbCardTask(spot.before));
 });
 
 $('#kb-close').onclick = toggleKanban;
+// Liste ou tableau : le choix est retenu
+$('#kb-view').onclick = (e) => {
+  const b = e.target.closest('[data-view]');
+  if (!b || b.dataset.view === (kbIsList() ? 'list' : 'board')) return;
+  state.kanban.view = b.dataset.view;
+  persist();
+  updateSidePanel();
+  renderKanban();
+};
 // Synchro ClickUp : elle se règle par projet, dans son formulaire
 $('#kb-settings').onclick = (e) => {
   const shown = kbShown();

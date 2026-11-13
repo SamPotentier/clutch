@@ -858,6 +858,34 @@ body.dragging-term .xterm { pointer-events: none; }
 #snd-mac.on { border-color: var(--accent); color: var(--text); }
 
 /* ---------- Kanban ---------- */
+/* Vue liste du kanban : les colonnes en onglets, puis les cartes de celle qui est choisie */
+#kb-view button { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; min-height: 24px; min-width: 0; }
+#kb-board.list { flex-direction: column; align-items: stretch; overflow: hidden; }
+.kb-listhead { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; }
+.kb-listbar { display: flex; gap: 4px; align-items: stretch; }
+.kb-tabs { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border-radius: var(--r2); background: var(--bg-3); }
+.kb-tabs button { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 30px; padding: 3px 10px; border: 0; background: transparent; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.kb-tabs button span { min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; background: color-mix(in srgb, var(--faint) 32%, transparent); }
+.kb-tabs button:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.kb-tabs button.on { background: var(--accent); color: var(--on-accent); }
+.kb-tabs button.on span { background: color-mix(in srgb, var(--on-accent) 18%, transparent); }
+.kb-tabs button.kb-drop-tab { box-shadow: inset 0 0 0 2px var(--accent); }
+.kb-tabs button:focus-visible, .kb-tab-tool:focus-visible, .kb-next:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kb-tab-tool { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 32px; padding: 0; color: var(--muted); }
+.kb-tab-tool:hover, .kb-tab-tool.on { color: var(--accent); }
+.kb-tab-tool .ic { width: 14px; height: 14px; }
+.kb-listhead .kb-colset { max-width: 340px; }
+.kb-rows { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.kb-rows.kb-drop-end::after { content: ""; flex-shrink: 0; height: 2px; border-radius: 2px; background: var(--accent); }
+.kb-card.kb-row { flex-direction: row; align-items: flex-start; gap: 10px; padding: 9px 11px; cursor: pointer; flex-shrink: 0; }
+.kb-row-dot { flex-shrink: 0; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; }
+.kb-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.kb-row .kb-meta { gap: 4px 8px; }
+.kb-row-proj { font-size: 11.5px; color: var(--text); white-space: nowrap; }
+.kb-row .kb-whos { margin: 2px 0 0; }
+.kb-next { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 2px 9px; font-size: 12px; white-space: nowrap; }
+.kb-next .ic { width: 12px; height: 12px; }
+body[data-theme="magic"] .kb-rows { --mana: var(--mana-w); }
 /* Filtre par projet du tableau unique */
 #kb-filter { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 10px 0; }
 #kb-filter button { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; min-height: 0; border-radius: 999px; font-size: 11.5px; color: var(--muted); background: transparent; }
@@ -1028,8 +1056,8 @@ body.dragging-term .xterm { pointer-events: none; }
 .ib-group span { font-weight: 400; }
 .ib-route { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-weight: 400; text-transform: none; letter-spacing: 0; }
 .ib-route select { font-size: 11.5px; padding: 1px 4px; max-width: 170px; }
-#ib-keys { padding: 5px 10px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 3px 5px; align-items: center; }
-#ib-keys kbd { font-size: 10.5px; padding: 0 4px; }
+#ib-keys, #kb-keys { padding: 5px 10px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 3px 5px; align-items: center; }
+#ib-keys kbd, #kb-keys kbd { font-size: 10.5px; padding: 0 4px; }
 #ib-list:not(:focus) + #ib-keys { opacity: .55; }
 /* Journée en cours, dans la barre du haut */
 #today { -webkit-app-region: no-drag; align-self: center; display: flex; align-items: center; gap: 6px; padding: 4px 10px; margin-right: 4px; border: none; background: none; border-radius: var(--r); font-size: 11px; color: var(--muted); white-space: nowrap; }

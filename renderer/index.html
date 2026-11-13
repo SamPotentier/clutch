@@ -113,6 +113,7 @@
         <div class="diff-head">
           <div class="diff-title"><button id="kb-add-btn" data-icon="plus" title="Ajouter une tâche ou un ticket ClickUp">Ticket</button><span id="kb-stats"></span></div>
           <div class="diff-tools">
+            <span id="kb-view" class="seg" role="group" aria-label="Affichage des tâches"><button type="button" data-view="list" data-icon="list" title="Liste : une colonne à la fois, choisie en haut">Liste</button><button type="button" data-view="board" data-icon="kanban" title="Tableau : toutes les colonnes côte à côte">Tableau</button></span>
             <button id="kb-wide" data-icon="expand" title="Agrandir le tableau sur la place des terminaux"></button>
             <button id="kb-settings" data-icon="settings" title="Synchro ClickUp d'un projet (les colonnes se règlent en cliquant sur leur en-tête)"></button>
             <button id="kb-close" data-icon="x" title="Fermer (⌘B)"></button>
@@ -128,6 +129,7 @@
         </form>
         <div id="kb-error" class="hidden"></div>
         <div id="kb-board"></div>
+        <div id="kb-keys" class="hidden"><kbd>←</kbd><kbd>→</kbd> colonne <kbd>J</kbd><kbd>K</kbd> naviguer <kbd>↵</kbd> ouvrir <kbd>M</kbd> faire avancer</div>
       </aside>
       <aside id="inbox-panel" class="hidden">
         <div class="diff-head">
