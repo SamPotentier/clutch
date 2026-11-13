@@ -188,10 +188,14 @@ body.resizing .xterm { pointer-events: none; }
 #diff-panel, #kanban-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .diff-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .diff-title { display: flex; gap: 10px; align-items: baseline; min-width: 0; font-weight: 600; }
-#diff-branch { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; font-size: 12px; color: var(--accent); font-family: var(--mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#diff-branch:empty { display: none; }
-#diff-branch .ic { width: 12px; height: 12px; flex-shrink: 0; }
-#diff-branch .repo { color: var(--muted); }
+/* Panneau étroit : le titre passe sur plusieurs lignes, une branche entière par ligne plutôt qu'une seule ligne coupée */
+#diff-panel .diff-title { flex-wrap: wrap; row-gap: 2px; }
+#diff-project { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#diff-branch { display: contents; font-weight: 400; font-size: 12px; color: var(--accent); font-family: var(--mono); }
+#diff-branch .br { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; max-width: 100%; }
+#diff-branch .br .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#diff-branch .ic { width: 12px; height: 12px; flex-shrink: 0; align-self: center; }
+#diff-branch .repo { color: var(--muted); flex-shrink: 0; }
 .diff-title #diff-stats { font-weight: 400; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .diff-tools { display: flex; gap: 4px; align-items: center; }
 .diff-tools select { padding: 3px 6px; font-size: 12px; }

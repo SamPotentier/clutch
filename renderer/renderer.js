@@ -1275,6 +1275,8 @@ $('#skill-run-form').onsubmit = (e) => {
   if (runTask) state.kanban.lastSkill = running.key;
   // Les valeurs tirées d'une tâche ne servent pas de « dernière saisie » pour le skill
   else state.skillConfigs[running.key] = { ...state.skillConfigs[running.key], last: { presetId: p.id, values } };
+  // Lancé depuis une carte, l'onglet porte le nom du ticket
+  const title = runTask?.title || `${p.name} · ${running.name}`;
   runTask = null;
   persist();
   closeOverlay($('#skill-run'));
@@ -1283,7 +1285,7 @@ $('#skill-run-form').onsubmit = (e) => {
     activate(tab.key);
     sendToTab(tab, prompt);
   } else {
-    openSession(p, { prompt, title: `${p.name} · ${running.name}` });
+    openSession(p, { prompt, title });
   }
 };
 $('#btn-skill-run-edit').onclick = () => {
@@ -1491,8 +1493,7 @@ const ln = (n) => `<td class="ln">${n ?? ''}</td>`;
 function renderDiff(t, files) {
   $('#diff-project').textContent = t ? t.title : '';
   const branches = (t?.git && t.branches) || [];
-  $('#diff-branch').innerHTML = branches.map((b) => `${icon('branch')}${b.name ? `<span class="repo">${esc(b.name)}</span> ` : ''}${esc(b.branch)}`).join(' ');
-  $('#diff-branch').title = branches.map((b) => (b.name ? `${b.name} : ` : '') + b.branch).join('\n');
+  $('#diff-branch').innerHTML = branches.map((b) => `<span class="br" title="${esc((b.name ? `${b.name} : ` : '') + b.branch)}">${icon('branch')}${b.name ? `<span class="repo">${esc(b.name)}</span>` : ''}<span class="name">${esc(b.branch)}</span></span>`).join('');
   const body = $('#diff-body');
   const list = $('#diff-files');
   const scrollTop = body.scrollTop;
