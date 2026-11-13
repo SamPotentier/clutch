@@ -1275,8 +1275,8 @@ $('#skill-run-form').onsubmit = (e) => {
   if (runTask) state.kanban.lastSkill = running.key;
   // Les valeurs tirées d'une tâche ne servent pas de « dernière saisie » pour le skill
   else state.skillConfigs[running.key] = { ...state.skillConfigs[running.key], last: { presetId: p.id, values } };
-  // Lancé depuis une carte, l'onglet porte le nom du ticket
-  const title = runTask?.title || `${p.name} · ${running.name}`;
+  // Lancé depuis une carte, l'onglet porte l'id du ticket ClickUp (ROCND-1352), à défaut le titre de la tâche
+  const title = runTask?.clickup?.customId || runTask?.clickup?.id || runTask?.title || `${p.name} · ${running.name}`;
   runTask = null;
   persist();
   closeOverlay($('#skill-run'));
